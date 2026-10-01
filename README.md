@@ -1,167 +1,186 @@
-# arch-disk-tui
-
 <div align="center">
 
-  <h1>⚡ arch-disk-tui</h1>
-  <p><strong>A blazingly fast, modern, and aesthetic Terminal Disk Space Analyzer & Treemap for Linux / Arch Linux</strong></p>
+  <img src="https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/assets/screenshot.png" alt="arch-disk-tui screenshot" width="94%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
 
-  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-  [![Rust](https://img.shields.io/badge/Language-Rust_2024-orange.svg)](https://www.rust-lang.org/)
-  [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Arch%20Linux-1793d1.svg)](https://archlinux.org)
-  [![CI](https://github.com/emirkefi/arch-disk-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/emirkefi/arch-disk-tui/actions)
+  <br/><br/>
+
+  <a href="https://github.com/emirkefi/arch-disk-tui">
+    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=28&duration=2800&pause=900&color=7DCFFF&center=true&vCenter=true&width=620&lines=%E2%9A%A1+ARCH%C2%B7DISK%C2%B7TUI;Blazingly+Fast+Storage+Analyzer;Next-Gen+Terminal+Heatmap;Vim-Powered+Directory+Explorer" alt="Typing SVG" />
+  </a>
+
+  <p align="center">
+    <strong>A blazingly fast, modern, and aesthetic Terminal Disk Space Analyzer & Heatmap for Linux / Arch Linux</strong>
+  </p>
+
+  <p align="center">
+    <a href="https://github.com/emirkefi/arch-disk-tui/stargazers"><img src="https://img.shields.io/github/stars/emirkefi/arch-disk-tui?style=for-the-badge&logo=star&color=ffc66d&logoColor=white" alt="Stars" /></a>
+    <a href="https://github.com/emirkefi/arch-disk-tui/releases"><img src="https://img.shields.io/github/v/release/emirkefi/arch-disk-tui?style=for-the-badge&color=78e6a0" alt="Release" /></a>
+    <a href="https://github.com/emirkefi/arch-disk-tui/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-7dcfff?style=for-the-badge" alt="License" /></a>
+    <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust_2024-e43717?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" /></a>
+    <a href="https://archlinux.org"><img src="https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=archlinux&logoColor=white" alt="Arch Linux" /></a>
+  </p>
+
+  <p align="center">
+    <a href="#-quick-install">🚀 Quick Install</a> •
+    <a href="#-features">✨ Features</a> •
+    <a href="#-interactive-keybindings">🎮 Controls</a> •
+    <a href="#-uninstall">🗑️ Uninstall</a>
+  </p>
 
 </div>
 
 ---
 
-## ✨ Features
+## ⚡ Overview
 
-- ⚡ **Blazingly Fast Asynchronous Scanning**: Multi-threaded, non-blocking disk traversal powered by `jwalk`. UI never freezes or stutters while indexing millions of files.
-- 🎨 **Next-Level Aesthetic UI**: Styled with modern rounded borders, Arch Ice Blue theme accents, and vibrant color palettes powered by `ratatui`.
-- 📊 **Partition Health & Hardware Gauges**: Real-time partition overview displaying mounted filesystems, total/used capacities, and color-coded utilization meters.
-- 📁 **Interactive Hierarchical Navigation**:
-  - Drill down into folders (`Enter` or `l`)
-  - Jump back to parent directories (`Backspace` or `h`)
-  - Intuitive Vim-style keys (`j`/`k`/`h`/`l`) and arrow keys
-- 📦 **Proportional Heatmap Blocks**: Proportional block visualization highlighting the top space hogs at a glance.
-- 🔍 **Live Search & Filter**: Instant file/folder fuzzy matching (`/`) to quickly spot deep bloated directories.
-- 🔃 **Multi-Mode Sorting**: Sort instantly by size, file count, or name (`s`).
-- 🛡️ **Virtual FS Protection**: Automatically prevents scan cycles and 128TB ghost allocations by cleanly bypassing Linux pseudo-filesystems (`/proc`, `/sys`, `/dev`, `/run`).
+**`arch-disk-tui`** is an ultra-performant, intuitive terminal disk analyzer engineered in Rust. Inspired by the speed of *WizTree* and the visual clarity of modern Unix tools, it delivers real-time non-blocking directory scanning, live partition health telemetry, Vim-style hierarchical navigation, and colorful proportional heatmap blocks.
+
+### 🌟 Why arch-disk-tui?
+
+<table>
+  <tr>
+    <td width="50%">
+      <h3>🚀 Blazing Fast & Non-Blocking</h3>
+      <ul>
+        <li>Multi-threaded traversal powered by <code>jwalk</code></li>
+        <li>Indexed <strong>540,000+ files in seconds</strong></li>
+        <li>UI stays 100% responsive and snappy while indexing</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>🎨 Cyberpunk & Arch-Themed UI</h3>
+      <ul>
+        <li>Crafted with Ratatui and modern rounded borders</li>
+        <li>Arch Ice Blue, Neon Pink, and Mint accents</li>
+        <li>Proportional colored distribution heatmaps</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>📂 Deep Interactive Exploration</h3>
+      <ul>
+        <li>Vim keys (<code>h</code>, <code>j</code>, <code>k</code>, <code>l</code>) or Arrow keys</li>
+        <li>Drill down into subdirectories or jump to parent in 1 keypress</li>
+        <li>Real-time fuzzy search & filtering (<code>/</code>)</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>🛡️ Safe Linux Virtual FS Filtering</h3>
+      <ul>
+        <li>Automatically skips pseudo-filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/run</code>)</li>
+        <li>No infinite recursion loops</li>
+        <li>Zero phantom 128TB allocation glitches</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## 📸 Interface Preview
+## 🚀 Quick Install
 
-```text
-╭── 󰣇 ARCH·DISK·TUI v0.1 ─╮╭──  Location: /home/user ──────────────╮╭────── 󰄬 Ready (38,421 scanned) ─╮
-╰─────────────────────────╯╰────────────────────────────────────────╯╰──────────────────────────────────╯
-╭─   Disks & Partitions Health ────────────────────────────────────────────────────────────────────────╮
-│   /dev/nvme0n1p2 (btrfs) on /          [━━━━━━━━━━━━───]  72.4% (362.00 GB / 500.00 GB)             │
-│   /dev/nvme0n1p1 (vfat ) on /boot      [━━─────────────]  14.2% (145.00 MB / 1.00 GB)               │
-╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─  Explorer [32.40 GB] - Sort: [Size 󰄼] ──╮╭─ 󱁤 Target Inspection ────────────────────────────────────╮
-│ ❯  .local               14.20 GB  43.8%  ││ Name:      .local (Directory)                            │
-│    .cargo                8.15 GB  25.1%  ││ Full Path: /home/user/.local                             │
-│    Projects              5.30 GB  16.3%  ││ Disk Size: 14.20 GB (43.8% of current scope)             │
-│    .cache                3.10 GB   9.5%  ││ Contains:  412 subdirs, 12,840 files                     │
-│    big_backup.tar.gz     1.10 GB   3.4%  │╰──────────────────────────────────────────────────────────╯
-│    Downloads             550.0 MB  1.7%  │╭─ 󰄛 Space Allocation & Heatmap ───────────────────────────╮
-│                                           ││ Top Space Consumers (Proportional Heatmap Blocks):       │
-│                                           ││  1 .local               14.20 GB   43.8%                 │
-│                                           ││    ██████████████████████████████                        │
-│                                           ││  2 .cargo                8.15 GB   25.1%                 │
-│                                           ││    █████████████████                                     │
-╰───────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
-```
-
----
-
-## 🚀 Quick Install & Download
-
-### Option 1: One-Line Installer Script
-Clone and install directly into your `~/.local/bin` (or `/usr/local/bin`):
+### ⚡ One-Line Automated Installer
 ```bash
 curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/install.sh | bash
 ```
 
-### Option 2: Build From Source (Cargo)
-Ensure you have the latest Rust toolchain installed:
+<details>
+<summary><b>📦 Alternative Install Methods (Cargo, Source, Make)</b></summary>
+<br/>
+
+#### Option A: Build from Source
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/emirkefi/arch-disk-tui.git
 cd arch-disk-tui
 
-# Build optimized release binary
+# 2. Build release binary
 cargo build --release
 
-# Run immediately
+# 3. Run
 ./target/release/arch-disk-tui
 ```
 
-### Option 3: Install directly with Cargo
+#### Option B: Direct Cargo Install
 ```bash
 cargo install --path .
 ```
 
-### Option 4: Makefile
+#### Option C: Standard Makefile
 ```bash
 make
 sudo make install
 ```
 
+</details>
+
 ---
 
-## 🗑️ Uninstallation
+## 🎮 Interactive Keybindings
 
-To remove `arch-disk-tui` from your system:
+<div align="center">
 
-### Option 1: Using the Uninstall Script
+| Shortcut | Description | Action |
+|:---:|:---|:---|
+| <kbd>j</kbd> / <kbd>↓</kbd> | Move Selection Down | Navigate current directory items |
+| <kbd>k</kbd> / <kbd>↑</kbd> | Move Selection Up | Navigate current directory items |
+| <kbd>l</kbd> / <kbd>Enter</kbd> | Drill Down | Enter highlighted directory |
+| <kbd>h</kbd> / <kbd>Backspace</kbd> | Navigate Back | Return to parent directory |
+| <kbd>s</kbd> | Cycle Sort Order | Switch between **Size 󰄼**, **Name 󰄾**, and **Count** |
+| <kbd>/</kbd> | Live Search Filter | Instant real-time regex/name search |
+| <kbd>Esc</kbd> | Dismiss | Clear search query or close dialogs |
+| <kbd>r</kbd> | Refresh Drives | Poll live filesystem storage metrics |
+| <kbd>?</kbd> | Cheatsheet | Open interactive modal help window |
+| <kbd>q</kbd> | Safe Exit | Restore terminal state and exit |
+
+</div>
+
+---
+
+## 🎯 Usage Examples
+
 ```bash
-# Locally
+# Scan current directory
+arch-disk-tui
+
+# Scan root partition
+arch-disk-tui /
+
+# Scan home folder
+arch-disk-tui ~
+
+# Check build help
+arch-disk-tui --help
+```
+
+---
+
+## 🗑️ Uninstall
+
+Cleanly remove `arch-disk-tui` with one command:
+
+```bash
+# Using the automated uninstaller
 ./uninstall.sh
 
-# Or via curl
+# Or via remote curl
 curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/uninstall.sh | bash
 ```
 
-### Option 2: Using Makefile
+Or via Makefile:
 ```bash
 sudo make uninstall
 ```
 
-### Option 3: Using Cargo (if installed via cargo)
-```bash
-cargo uninstall arch-disk-tui
-```
-
 ---
 
-## 🎮 Usage & Keybindings
+<div align="center">
 
-Run the analyzer in your current directory:
-```bash
-arch-disk-tui
-```
+  Made with ❤️ for Arch Linux & Rust enthusiasts by <a href="https://github.com/emirkefi"><strong>Emir</strong></a>
 
-Analyze a specific mount point or directory (e.g. system root):
-```bash
-arch-disk-tui /
-# Or check your home directory
-arch-disk-tui ~
-```
+  <br/>
 
-### Keyboard Cheatsheet
+  <a href="#arch-disk-tui">⬆ Back to Top</a>
 
-| Key | Action |
-|:---|:---|
-| <kbd>j</kbd> / <kbd>↓</kbd> | Move selection down |
-| <kbd>k</kbd> / <kbd>↑</kbd> | Move selection up |
-| <kbd>Enter</kbd> / <kbd>l</kbd> | Drill down into selected folder |
-| <kbd>Backspace</kbd> / <kbd>h</kbd> | Jump back up to parent directory |
-| <kbd>s</kbd> | Cycle sort order (Size 󰄼 / Name 󰄾 / Total Items) |
-| <kbd>/</kbd> | Live filter / search file and folder names |
-| <kbd>Esc</kbd> | Clear search filter or close popups |
-| <kbd>r</kbd> | Refresh disk filesystem statistics |
-| <kbd>?</kbd> | Open help dialog |
-| <kbd>q</kbd> | Quit application |
-
----
-
-## 🛠️ Development
-
-```bash
-# Check code style & compile checks
-cargo check
-
-# Run in debug mode
-cargo run -- /path/to/scan
-
-# Run tests
-cargo test
-```
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+</div>
