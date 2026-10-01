@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/assets/screenshot.png" alt="arch-disk-tui screenshot" width="94%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+  <img src="assets/screenshot.png" alt="arch-disk-tui screenshot" width="94%" />
 
   <br/><br/>
 
