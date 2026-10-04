@@ -129,12 +129,25 @@ sudo make install
 | <kbd>h</kbd> / <kbd>Backspace</kbd> | Navigate Back | Return to parent directory |
 | <kbd>s</kbd> | Cycle Sort Order | Switch between **Size 󰄼**, **Name 󰄾**, and **Count** |
 | <kbd>/</kbd> | Live Search Filter | Instant real-time regex/name search |
+| <kbd>d</kbd> / <kbd>Del</kbd> | Safe Delete | Delete highlighted file or folder (with confirmation modal) |
 | <kbd>Esc</kbd> | Dismiss | Clear search query or close dialogs |
 | <kbd>r</kbd> | Refresh Drives | Poll live filesystem storage metrics |
 | <kbd>?</kbd> | Cheatsheet | Open interactive modal help window |
 | <kbd>q</kbd> | Safe Exit | Restore terminal state and exit |
 
 </div>
+
+---
+
+## 🛡️ Safe File & Folder Deletion
+
+`arch-disk-tui` allows users to clean up disk space directly from the tool with multi-layered safety guards:
+
+- **Always Confirms**: Every single deletion requires explicit confirmation via an interactive modal displaying item type, full path, file size, and subdirectory/file counts.
+- **System File Protection**: Core system hierarchies (`/etc`, `/usr`, `/var`, `/boot`, `/bin`, `/lib`, `/opt`, `/root`, etc.) and system/root-owned files cannot be deleted by regular users.
+- **Personal Scope**: Standard users can only delete their own personal, downloaded, or user-created files (e.g. `~/Downloads`, `~/Projects`, external drives, user files).
+- **Superuser Support**: When connected with superuser privileges (e.g. `sudo arch-disk-tui`), system items can be deleted, accompanied by high-visibility caution alerts and warnings.
+- **Root Shield**: The filesystem root (`/`) and active scan root cannot be deleted under any circumstances.
 
 ---
 

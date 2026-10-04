@@ -85,6 +85,59 @@ impl DiskNode {
             None
         }
     }
+
+    /// Remove node given a path relative to this root, bubbling down size and count reductions
+    pub fn remove_node(&mut self, target: &Path, root_path: &Path) -> Option<DiskNode> {
+        let relative = target.strip_prefix(root_path).ok()?;
+        let components: Vec<String> = relative
+            .components()
+            .filter_map(|c| c.as_os_str().to_str().map(String::from))
+            .collect();
+
+        if components.is_empty() {
+            return None;
+        }
+
+        self.remove_recursive(components)
+    }
+
+    fn remove_recursive(&mut self, mut comps: Vec<String>) -> Option<DiskNode> {
+        if comps.is_empty() {
+            return None;
+        }
+
+        let head = comps.remove(0);
+
+        if comps.is_empty() {
+            if let Some(removed) = self.children.remove(&head) {
+                self.size = self.size.saturating_sub(removed.size);
+                if removed.is_dir {
+                    self.file_count = self.file_count.saturating_sub(removed.file_count);
+                    self.dir_count = self.dir_count.saturating_sub(removed.dir_count + 1);
+                } else {
+                    self.file_count = self.file_count.saturating_sub(1);
+                }
+                return Some(removed);
+            }
+            None
+        } else {
+            if let Some(child) = self.children.get_mut(&head) {
+                let removed = child.remove_recursive(comps);
+                if let Some(ref rem) = removed {
+                    self.size = self.size.saturating_sub(rem.size);
+                    if rem.is_dir {
+                        self.file_count = self.file_count.saturating_sub(rem.file_count);
+                        self.dir_count = self.dir_count.saturating_sub(rem.dir_count + 1);
+                    } else {
+                        self.file_count = self.file_count.saturating_sub(1);
+                    }
+                }
+                removed
+            } else {
+                None
+            }
+        }
+    }
 }
 
 pub fn format_size(bytes: u64) -> String {
@@ -103,5 +156,60 @@ pub fn format_size(bytes: u64) -> String {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insert_and_remove_file() {
+        let root_path = PathBuf::from("/home/user");
+        let mut root = DiskNode::new("user".into(), root_path.clone(), true);
+
+        let file1 = PathBuf::from("/home/user/file1.txt");
+        let file2 = PathBuf::from("/home/user/sub/file2.txt");
+
+        root.insert(&file1, 500, false, &root_path);
+        root.insert(&file2, 300, false, &root_path);
+
+        assert_eq!(root.size, 800);
+        assert_eq!(root.file_count, 2);
+
+        let removed = root.remove_node(&file1, &root_path);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().size, 500);
+
+        assert_eq!(root.size, 300);
+        assert_eq!(root.file_count, 1);
+        assert!(!root.children.contains_key("file1.txt"));
+        assert!(root.children.contains_key("sub"));
+    }
+
+    #[test]
+    fn test_remove_directory_recursively() {
+        let root_path = PathBuf::from("/home/user");
+        let mut root = DiskNode::new("user".into(), root_path.clone(), true);
+
+        let sub_file1 = PathBuf::from("/home/user/downloads/a.iso");
+        let sub_file2 = PathBuf::from("/home/user/downloads/nested/b.iso");
+
+        root.insert(&sub_file1, 1000, false, &root_path);
+        root.insert(&sub_file2, 2000, false, &root_path);
+
+        assert_eq!(root.size, 3000);
+        assert_eq!(root.file_count, 2);
+
+        let downloads_path = PathBuf::from("/home/user/downloads");
+        let removed = root.remove_node(&downloads_path, &root_path);
+        assert!(removed.is_some());
+        let rem = removed.unwrap();
+        assert_eq!(rem.size, 3000);
+        assert_eq!(rem.file_count, 2);
+
+        assert_eq!(root.size, 0);
+        assert_eq!(root.file_count, 0);
+        assert!(!root.children.contains_key("downloads"));
     }
 }

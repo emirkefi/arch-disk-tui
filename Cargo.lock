@@ -90,6 +90,7 @@ dependencies = [
  "crossterm",
  "human_bytes",
  "jwalk",
+ "libc",
  "ratatui",
  "sysinfo",
 ]

@@ -28,6 +28,9 @@ use sysinfo::Disks;
 mod model;
 use model::{format_size, DiskNode};
 
+mod safety;
+use safety::{check_deletion_permission, is_superuser, DeletionRestriction};
+
 #[derive(Parser, Debug)]
 #[command(
     name = "arch-disk-tui",
@@ -64,6 +67,38 @@ enum SortOrder {
     FilesDesc,
 }
 
+#[derive(Clone, Debug)]
+struct DeleteConfirmDialog {
+    target_name: String,
+    target_path: PathBuf,
+    target_size: u64,
+    is_dir: bool,
+    file_count: usize,
+    dir_count: usize,
+    is_system: bool,
+}
+
+#[derive(Clone, Debug)]
+struct SystemProtectedDialog {
+    target_name: String,
+    target_path: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+struct MessageDialog {
+    title: String,
+    message: String,
+    is_error: bool,
+}
+
+#[derive(Clone, Debug)]
+enum Modal {
+    Help,
+    DeleteConfirm(DeleteConfirmDialog),
+    SystemProtected(SystemProtectedDialog),
+    Message(MessageDialog),
+}
+
 struct App {
     root_path: PathBuf,
     current_path: PathBuf,
@@ -76,7 +111,8 @@ struct App {
     current_scanning_item: String,
     scan_start_time: Instant,
     scan_duration: Option<Duration>,
-    show_help: bool,
+    modal: Option<Modal>,
+    status_notification: Option<(String, Instant)>,
     filter_query: String,
     is_filtering: bool,
 }
@@ -104,7 +140,8 @@ impl App {
             current_scanning_item: String::from("Starting scan..."),
             scan_start_time: Instant::now(),
             scan_duration: None,
-            show_help: false,
+            modal: None,
+            status_notification: None,
             filter_query: String::new(),
             is_filtering: false,
         }
@@ -210,6 +247,100 @@ impl App {
             SortOrder::FilesDesc => SortOrder::SizeDesc,
         };
         self.list_state.select(Some(0));
+    }
+
+    fn request_delete_selected(&mut self) {
+        let items = self.get_filtered_sorted_children();
+        if let Some(selected) = self.list_state.selected() {
+            if let Some(target) = items.get(selected) {
+                match check_deletion_permission(&target.path, &self.root_path) {
+                    Err(DeletionRestriction::RootFilesystem) => {
+                        self.modal = Some(Modal::Message(MessageDialog {
+                            title: "Action Forbidden".into(),
+                            message: "The root directory '/' cannot be deleted under any circumstances!".into(),
+                            is_error: true,
+                        }));
+                    }
+                    Err(DeletionRestriction::CurrentScanRoot) => {
+                        self.modal = Some(Modal::Message(MessageDialog {
+                            title: "Action Forbidden".into(),
+                            message: "Cannot delete the active scan root while viewing it!".into(),
+                            is_error: true,
+                        }));
+                    }
+                    Err(DeletionRestriction::SystemProtected { .. }) => {
+                        self.modal = Some(Modal::SystemProtected(SystemProtectedDialog {
+                            target_name: target.name.clone(),
+                            target_path: target.path.clone(),
+                        }));
+                    }
+                    Ok(is_system) => {
+                        self.modal = Some(Modal::DeleteConfirm(DeleteConfirmDialog {
+                            target_name: target.name.clone(),
+                            target_path: target.path.clone(),
+                            target_size: target.size,
+                            is_dir: target.is_dir,
+                            file_count: target.file_count,
+                            dir_count: target.dir_count,
+                            is_system,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    fn execute_deletion(&mut self) {
+        if let Some(Modal::DeleteConfirm(dialog)) = self.modal.take() {
+            let target_path = dialog.target_path;
+            let is_dir = dialog.is_dir;
+            let name = dialog.target_name;
+            let size = dialog.target_size;
+
+            let del_res = if is_dir {
+                let is_symlink = target_path
+                    .symlink_metadata()
+                    .map(|m| m.file_type().is_symlink())
+                    .unwrap_or(false);
+                if is_symlink {
+                    std::fs::remove_file(&target_path)
+                } else {
+                    std::fs::remove_dir_all(&target_path)
+                }
+            } else {
+                std::fs::remove_file(&target_path)
+            };
+
+            match del_res {
+                Ok(()) => {
+                    self.root_node.remove_node(&target_path, &self.root_path);
+
+                    let remaining = self.get_filtered_sorted_children();
+                    if remaining.is_empty() {
+                        self.list_state.select(None);
+                    } else if let Some(sel) = self.list_state.selected() {
+                        if sel >= remaining.len() {
+                            self.list_state.select(Some(remaining.len().saturating_sub(1)));
+                        }
+                    }
+
+                    self.disks.refresh(true);
+
+                    let item_type = if is_dir { "folder" } else { "file" };
+                    self.status_notification = Some((
+                        format!("󰄬 Successfully deleted {item_type} '{}' ({})", name, format_size(size)),
+                        Instant::now(),
+                    ));
+                }
+                Err(err) => {
+                    self.modal = Some(Modal::Message(MessageDialog {
+                        title: "Deletion Failed".into(),
+                        message: format!("Could not delete '{}':\n{}", target_path.display(), err),
+                        is_error: true,
+                    }));
+                }
+            }
+        }
     }
 }
 
@@ -328,7 +459,37 @@ fn run_app(
 
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if app.is_filtering {
+                if let Some(modal) = app.modal.clone() {
+                    match modal {
+                        Modal::Help => match key.code {
+                            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::Enter => {
+                                app.modal = None;
+                            }
+                            _ => {}
+                        },
+                        Modal::DeleteConfirm(_) => match key.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                                app.execute_deletion();
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                app.modal = None;
+                            }
+                            _ => {}
+                        },
+                        Modal::SystemProtected(_) => match key.code {
+                            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char(' ') => {
+                                app.modal = None;
+                            }
+                            _ => {}
+                        },
+                        Modal::Message(_) => match key.code {
+                            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char(' ') => {
+                                app.modal = None;
+                            }
+                            _ => {}
+                        },
+                    }
+                } else if app.is_filtering {
                     match key.code {
                         KeyCode::Esc | KeyCode::Enter => {
                             app.is_filtering = false;
@@ -347,7 +508,7 @@ fn run_app(
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(()),
-                        KeyCode::Char('?') => app.show_help = !app.show_help,
+                        KeyCode::Char('?') => app.modal = Some(Modal::Help),
                         KeyCode::Char('/') => {
                             app.is_filtering = true;
                         }
@@ -355,14 +516,15 @@ fn run_app(
                         KeyCode::Char('r') => {
                             app.disks.refresh(true);
                         }
+                        KeyCode::Char('d') | KeyCode::Delete => {
+                            app.request_delete_selected();
+                        }
                         KeyCode::Down | KeyCode::Char('j') => app.next_item(),
                         KeyCode::Up | KeyCode::Char('k') => app.previous_item(),
                         KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => app.enter_dir(),
                         KeyCode::Left | KeyCode::Char('h') | KeyCode::Backspace => app.exit_dir(),
                         KeyCode::Esc => {
-                            if app.show_help {
-                                app.show_help = false;
-                            } else if !app.filter_query.is_empty() {
+                            if !app.filter_query.is_empty() {
                                 app.filter_query.clear();
                             }
                         }
@@ -400,8 +562,13 @@ fn render_ui(f: &mut Frame, app: &mut App) {
     render_body(f, app, chunks[2]);
     render_footer(f, app, chunks[3]);
 
-    if app.show_help {
-        render_help_modal(f, size);
+    if let Some(ref modal) = app.modal {
+        match modal {
+            Modal::Help => render_help_modal(f, size),
+            Modal::DeleteConfirm(dialog) => render_delete_confirm_modal(f, dialog, size),
+            Modal::SystemProtected(dialog) => render_system_protected_modal(f, dialog, size),
+            Modal::Message(dialog) => render_message_modal(f, dialog, size),
+        }
     }
 }
 
@@ -411,28 +578,45 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(28), Constraint::Min(20), Constraint::Length(32)])
         .split(area);
 
-    // App Branding
-    let logo_spans = vec![
+    // App Branding & Superuser Status
+    let mut logo_spans = vec![
         Span::styled(" 󰣇 ", Style::default().fg(Color::Rgb(23, 147, 209)).bold()),
         Span::styled("ARCH", Style::default().fg(Color::Cyan).bold()),
         Span::styled("·DISK·", Style::default().fg(Color::White).bold()),
         Span::styled("TUI", Style::default().fg(Color::Rgb(120, 230, 160)).bold()),
-        Span::styled(" v0.1 ", Style::default().fg(Color::DarkGray)),
     ];
+    if is_superuser() {
+        logo_spans.push(Span::styled(" [ROOT] ", Style::default().fg(Color::Rgb(255, 95, 95)).bold()));
+    } else {
+        logo_spans.push(Span::styled(" v0.1 ", Style::default().fg(Color::DarkGray)));
+    }
+
     let logo = Paragraph::new(Line::from(logo_spans)).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Rgb(60, 70, 95))),
+            .border_style(if is_superuser() {
+                Style::default().fg(Color::Rgb(255, 95, 95))
+            } else {
+                Style::default().fg(Color::Rgb(60, 70, 95))
+            }),
     );
     f.render_widget(logo, header_chunks[0]);
 
-    // Current Breadcrumb / Path Info
+    // Current Breadcrumb / Path Info & Status Toast
     let path_display = app.current_path.to_string_lossy();
     let mut path_spans = vec![
         Span::styled("  Location: ", Style::default().fg(Color::DarkGray)),
         Span::styled(path_display, Style::default().fg(Color::Yellow).bold()),
     ];
+
+    if let Some((ref msg, time)) = app.status_notification {
+        if time.elapsed() < Duration::from_secs(4) {
+            path_spans.push(Span::styled("  │ ", Style::default().fg(Color::DarkGray)));
+            path_spans.push(Span::styled(msg, Style::default().fg(Color::Rgb(120, 230, 160)).bold()));
+        }
+    }
+
     if !app.filter_query.is_empty() || app.is_filtering {
         path_spans.push(Span::styled("  [Search: ", Style::default().fg(Color::Cyan)));
         path_spans.push(Span::styled(&app.filter_query, Style::default().fg(Color::White).bold()));
@@ -750,20 +934,20 @@ fn render_analytics(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
     let shortcuts = vec![
-        Span::styled(" [j/↓] ", Style::default().fg(Color::Cyan).bold()),
-        Span::styled("Down  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[k/↑] ", Style::default().fg(Color::Cyan).bold()),
-        Span::styled("Up  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[l/Enter] ", Style::default().fg(Color::Cyan).bold()),
-        Span::styled("Enter  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[h/Back] ", Style::default().fg(Color::Cyan).bold()),
-        Span::styled("Parent  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" [j/k] ", Style::default().fg(Color::Cyan).bold()),
+        Span::styled("Move  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[Enter] ", Style::default().fg(Color::Cyan).bold()),
+        Span::styled("Open  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[h] ", Style::default().fg(Color::Cyan).bold()),
+        Span::styled("Back  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[s] ", Style::default().fg(Color::Yellow).bold()),
         Span::styled("Sort  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[/] ", Style::default().fg(Color::Green).bold()),
         Span::styled("Filter  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[d] ", Style::default().fg(Color::Rgb(255, 100, 100)).bold()),
+        Span::styled("Delete  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[r] ", Style::default().fg(Color::Magenta).bold()),
-        Span::styled("Refresh Disks  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Refresh  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[?] ", Style::default().fg(Color::White).bold()),
         Span::styled("Help  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[q] ", Style::default().fg(Color::LightRed).bold()),
@@ -775,7 +959,7 @@ fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
 }
 
 fn render_help_modal(f: &mut Frame, area: Rect) {
-    let popup_area = centered_rect(60, 60, area);
+    let popup_area = centered_rect(64, 66, area);
     f.render_widget(Clear, popup_area);
 
     let help_text = vec![
@@ -806,6 +990,10 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
             Span::styled("Live filter / search items (Esc to exit filter)", Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
+            Span::styled("  d / Delete          ", Style::default().fg(Color::Rgb(255, 100, 100)).bold()),
+            Span::styled("Delete selected file or folder (with confirmation)", Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
             Span::styled("  r                   ", Style::default().fg(Color::Yellow).bold()),
             Span::styled("Refresh disk hardware mount statistics", Style::default().fg(Color::White)),
         ]),
@@ -816,6 +1004,11 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled("  q / Ctrl+C          ", Style::default().fg(Color::LightRed).bold()),
             Span::styled("Exit application safely", Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  🛡 Safety Note:      ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled("System files/folders are protected unless run as superuser.", Style::default().fg(Color::Rgb(180, 190, 210))),
         ]),
         Line::from(""),
         Line::from(Span::styled("Press [Esc] or [?] to close this help window.", Style::default().fg(Color::DarkGray))),
@@ -830,6 +1023,196 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
     let popup = Paragraph::new(help_text).block(block).alignment(Alignment::Left);
     f.render_widget(popup, popup_area);
 }
+
+fn render_delete_confirm_modal(f: &mut Frame, dialog: &DeleteConfirmDialog, area: Rect) {
+    let popup_area = centered_rect(68, 55, area);
+    f.render_widget(Clear, popup_area);
+
+    let border_color = if dialog.is_system {
+        Color::Rgb(255, 75, 75)
+    } else {
+        Color::Rgb(255, 185, 75)
+    };
+
+    let title = if dialog.is_system {
+        " 󰀦 CAUTION: SUPERUSER SYSTEM DELETION "
+    } else {
+        " 󰀦 CONFIRM PERMANENT DELETION "
+    };
+
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Are you sure you want to permanently delete this item?", Style::default().fg(Color::White).bold()),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Item Type:  ", Style::default().fg(Color::DarkGray)),
+            if dialog.is_dir {
+                Span::styled("Directory / Folder (Recursive)", Style::default().fg(Color::Cyan).bold())
+            } else {
+                Span::styled("Regular File", Style::default().fg(Color::Rgb(180, 190, 210)).bold())
+            },
+        ]),
+        Line::from(vec![
+            Span::styled("  Item Name:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&dialog.target_name, Style::default().fg(Color::Yellow).bold()),
+        ]),
+        Line::from(vec![
+            Span::styled("  Location:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(dialog.target_path.to_string_lossy(), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Disk Size:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format_size(dialog.target_size), Style::default().fg(Color::Rgb(255, 100, 100)).bold()),
+        ]),
+    ];
+
+    if dialog.is_dir {
+        lines.push(Line::from(vec![
+            Span::styled("  Contains:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{} subfolders, {} files", dialog.dir_count, dialog.file_count),
+                Style::default().fg(Color::Rgb(180, 180, 220)),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+
+    if dialog.is_system {
+        lines.push(Line::from(vec![
+            Span::styled("  󰀦 EXTREME CAUTION: ", Style::default().fg(Color::Rgb(255, 60, 60)).bold()),
+            Span::styled("SUPERUSER PRIVILEGE ACTIVE. This is a system resource!", Style::default().fg(Color::Rgb(255, 120, 120)).bold()),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw("                     "),
+            Span::styled("Deleting system files can permanently damage your OS installation!", Style::default().fg(Color::Rgb(255, 150, 150))),
+        ]));
+    } else if dialog.is_dir {
+        lines.push(Line::from(vec![
+            Span::styled("  󰀦 CAUTION: ", Style::default().fg(Color::Rgb(255, 198, 109)).bold()),
+            Span::styled("This will recursively delete this folder and ALL items inside it!", Style::default().fg(Color::Rgb(255, 198, 109))),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw("             "),
+            Span::styled("This operation is permanent. Files will NOT be moved to trash.", Style::default().fg(Color::DarkGray)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("  󰀦 CAUTION: ", Style::default().fg(Color::Rgb(255, 198, 109)).bold()),
+            Span::styled("This file will be permanently removed from disk (no trash bin).", Style::default().fg(Color::Rgb(255, 198, 109))),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(" [ y / Enter ] ", Style::default().bg(Color::Rgb(180, 40, 40)).fg(Color::White).bold()),
+        Span::styled(" Confirm Permanent Delete    ", Style::default().fg(Color::Rgb(255, 100, 100))),
+        Span::styled("[ n / Esc ] ", Style::default().bg(Color::Rgb(50, 60, 80)).fg(Color::White).bold()),
+        Span::styled(" Cancel & Keep Item", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(border_color))
+        .title(Span::styled(title, Style::default().fg(border_color).bold()));
+
+    let popup = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    f.render_widget(popup, popup_area);
+}
+
+fn render_system_protected_modal(f: &mut Frame, dialog: &SystemProtectedDialog, area: Rect) {
+    let popup_area = centered_rect(68, 55, area);
+    f.render_widget(Clear, popup_area);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  󰅚 CANNOT DELETE SYSTEM FILES OR FOLDERS", Style::default().fg(Color::Rgb(255, 95, 95)).bold()),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Target:    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&dialog.target_name, Style::default().fg(Color::Yellow).bold()),
+        ]),
+        Line::from(vec![
+            Span::styled("  Path:      ", Style::default().fg(Color::DarkGray)),
+            Span::styled(dialog.target_path.to_string_lossy(), Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  󰌾 Security Policy:", Style::default().fg(Color::Cyan).bold()),
+        ]),
+        Line::from(vec![
+            Span::styled("    System components and root-owned files are protected from modification.", Style::default().fg(Color::Rgb(200, 205, 215))),
+        ]),
+        Line::from(vec![
+            Span::styled("    Only personal, downloaded, or user-created files may be deleted.", Style::default().fg(Color::Rgb(200, 205, 215))),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  💡 Superuser Requirement:", Style::default().fg(Color::Yellow).bold()),
+        ]),
+        Line::from(vec![
+            Span::styled("    To delete system files, re-launch arch-disk-tui with superuser privileges:", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::raw("      "),
+            Span::styled("sudo arch-disk-tui ", Style::default().fg(Color::Rgb(120, 230, 160)).bold()),
+            Span::styled("<path>", Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(" [ Esc / Enter ] ", Style::default().bg(Color::Rgb(60, 70, 95)).fg(Color::White).bold()),
+            Span::styled(" Dismiss", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(Color::Rgb(255, 80, 80)))
+        .title(Span::styled(" 󰌾 ACCESS RESTRICTED - SYSTEM PROTECTED ", Style::default().fg(Color::Rgb(255, 95, 95)).bold()));
+
+    let popup = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    f.render_widget(popup, popup_area);
+}
+
+fn render_message_modal(f: &mut Frame, dialog: &MessageDialog, area: Rect) {
+    let popup_area = centered_rect(60, 35, area);
+    f.render_widget(Clear, popup_area);
+
+    let border_color = if dialog.is_error {
+        Color::Rgb(255, 80, 80)
+    } else {
+        Color::Cyan
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(Span::styled(format!("  {}", dialog.message), Style::default().fg(Color::White))),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(" [ Esc / Enter ] ", Style::default().bg(Color::Rgb(60, 70, 95)).fg(Color::White).bold()),
+            Span::styled(" Dismiss", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(border_color))
+        .title(Span::styled(format!(" 󰅚 {} ", dialog.title), Style::default().fg(border_color).bold()));
+
+    let popup = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
+    f.render_widget(popup, popup_area);
+}
+
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
@@ -849,4 +1232,86 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_delete_file_and_folder_flow() {
+        let temp_dir = std::env::temp_dir().join("arch_disk_tui_app_test");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let file_a = temp_dir.join("test_file.txt");
+        std::fs::write(&file_a, b"hello world").unwrap();
+
+        let sub_dir = temp_dir.join("my_subfolder");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        let file_b = sub_dir.join("nested.bin");
+        std::fs::write(&file_b, b"1234567890").unwrap();
+
+        let mut app = App::new(temp_dir.clone());
+        app.root_node.insert(&file_a, 11, false, &temp_dir);
+        app.root_node.insert(&sub_dir, 10, true, &temp_dir);
+        app.root_node.insert(&file_b, 10, false, &temp_dir);
+
+        let items = app.get_filtered_sorted_children();
+        assert_eq!(items.len(), 2);
+
+        // Select file_a
+        let file_idx = items.iter().position(|i| i.name == "test_file.txt").unwrap();
+        app.list_state.select(Some(file_idx));
+
+        // Request delete
+        app.request_delete_selected();
+        assert!(matches!(app.modal, Some(Modal::DeleteConfirm(ref d)) if d.target_name == "test_file.txt" && !d.is_dir));
+
+        // Execute delete
+        app.execute_deletion();
+        assert!(!file_a.exists());
+        assert!(app.modal.is_none());
+        assert!(app.status_notification.is_some());
+
+        // Now select sub_dir
+        let remaining = app.get_filtered_sorted_children();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].name, "my_subfolder");
+        app.list_state.select(Some(0));
+
+        // Request delete on folder
+        app.request_delete_selected();
+        assert!(matches!(app.modal, Some(Modal::DeleteConfirm(ref d)) if d.target_name == "my_subfolder" && d.is_dir));
+
+        // Execute delete
+        app.execute_deletion();
+        assert!(!sub_dir.exists());
+        assert!(!file_b.exists());
+        assert!(app.modal.is_none());
+        assert_eq!(app.get_filtered_sorted_children().len(), 0);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_app_system_file_deletion_blocked_for_regular_user() {
+        let scan_root = PathBuf::from("/etc");
+        let mut app = App::new(scan_root.clone());
+        let system_file = PathBuf::from("/etc/fstab");
+        app.root_node.insert(&system_file, 100, false, &scan_root);
+
+        let items = app.get_filtered_sorted_children();
+        assert_eq!(items.len(), 1);
+        app.list_state.select(Some(0));
+
+        app.request_delete_selected();
+
+        if !is_superuser() {
+            assert!(matches!(app.modal, Some(Modal::SystemProtected(ref d)) if d.target_name == "fstab"));
+        } else {
+            assert!(matches!(app.modal, Some(Modal::DeleteConfirm(ref d)) if d.target_name == "fstab" && d.is_system));
+        }
+    }
 }
