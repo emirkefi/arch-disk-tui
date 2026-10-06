@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Emir <emirlkf@hotmail.com>"]
 repository = "https://github.com/emirkefi/arch-disk-tui"
-description = "A blazingly fast, modern, and aesthetic Terminal Disk Space Analyzer & Treemap for Linux / Arch Linux"
+description = "A fast, modern terminal disk space analyzer and heatmap for Linux"
 readme = "README.md"
 license = "MIT"
 keywords = ["tui", "disk-usage", "ncdu", "ratatui", "archlinux"]
@@ -13,9 +13,14 @@ categories = ["command-line-utilities", "filesystem"]
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 crossterm = "0.29.0"
-human_bytes = "0.4.3"
 jwalk = "0.9.0"
 ratatui = "0.30.2"
 sysinfo = "0.39.6"
 libc = "0.2"
 
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

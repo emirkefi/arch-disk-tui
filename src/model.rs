@@ -19,29 +19,23 @@ impl DiskNode {
             path,
             size: 0,
             is_dir,
-            file_count: if is_dir { 0 } else { 1 },
+            file_count: 0,
             dir_count: 0,
             children: HashMap::new(),
         }
     }
 
-    /// Insert a path into the tree and bubble up sizes and counts
+    /// Insert a path into the tree and bubble up sizes and counts iteratively
     pub fn insert(&mut self, full_path: &Path, file_size: u64, is_dir: bool, root_path: &Path) {
-        if let Ok(relative) = full_path.strip_prefix(root_path) {
-            let components: Vec<String> = relative
-                .components()
-                .filter_map(|c| c.as_os_str().to_str().map(String::from))
-                .collect();
+        let Ok(relative) = full_path.strip_prefix(root_path) else {
+            return;
+        };
 
-            if components.is_empty() {
-                return;
-            }
-
-            self.insert_recursive(components, full_path, file_size, is_dir);
+        let mut comps = relative.components().peekable();
+        if comps.peek().is_none() {
+            return;
         }
-    }
 
-    fn insert_recursive(&mut self, mut comps: Vec<String>, full_path: &Path, file_size: u64, is_dir: bool) {
         self.size += file_size;
         if is_dir {
             self.dir_count += 1;
@@ -49,24 +43,39 @@ impl DiskNode {
             self.file_count += 1;
         }
 
-        if comps.is_empty() {
-            return;
+        let mut curr = self;
+        while let Some(comp) = comps.next() {
+            let comp_str = match comp.as_os_str().to_str() {
+                Some(s) if !s.is_empty() => s,
+                _ => continue,
+            };
+            let is_last = comps.peek().is_none();
+
+            if !curr.children.contains_key(comp_str) {
+                let child_path = if is_last && curr.path.join(comp_str) == full_path {
+                    full_path.to_path_buf()
+                } else {
+                    curr.path.join(comp_str)
+                };
+
+                let new_node = DiskNode::new(
+                    comp_str.to_string(),
+                    child_path,
+                    if is_last { is_dir } else { true },
+                );
+                curr.children.insert(comp_str.to_string(), new_node);
+            }
+
+            let child = curr.children.get_mut(comp_str).unwrap();
+            child.size += file_size;
+            if is_dir {
+                child.dir_count += 1;
+            } else {
+                child.file_count += 1;
+            }
+
+            curr = child;
         }
-
-        let head = comps.remove(0);
-        let is_last = comps.is_empty();
-
-        let child_path = if self.path.join(&head) == full_path {
-            full_path.to_path_buf()
-        } else {
-            self.path.join(&head)
-        };
-
-        let child = self.children.entry(head.clone()).or_insert_with(|| {
-            DiskNode::new(head, child_path, if is_last { is_dir } else { true })
-        });
-
-        child.insert_recursive(comps, full_path, file_size, is_dir);
     }
 
     /// Find node given a path relative to this root
@@ -89,27 +98,28 @@ impl DiskNode {
     /// Remove node given a path relative to this root, bubbling down size and count reductions
     pub fn remove_node(&mut self, target: &Path, root_path: &Path) -> Option<DiskNode> {
         let relative = target.strip_prefix(root_path).ok()?;
-        let components: Vec<String> = relative
+        let components: Vec<&str> = relative
             .components()
-            .filter_map(|c| c.as_os_str().to_str().map(String::from))
+            .filter_map(|c| c.as_os_str().to_str())
             .collect();
 
         if components.is_empty() {
             return None;
         }
 
-        self.remove_recursive(components)
+        self.remove_slice(&components)
     }
 
-    fn remove_recursive(&mut self, mut comps: Vec<String>) -> Option<DiskNode> {
+    fn remove_slice(&mut self, comps: &[&str]) -> Option<DiskNode> {
         if comps.is_empty() {
             return None;
         }
 
-        let head = comps.remove(0);
+        let head = comps[0];
+        let tail = &comps[1..];
 
-        if comps.is_empty() {
-            if let Some(removed) = self.children.remove(&head) {
+        if tail.is_empty() {
+            if let Some(removed) = self.children.remove(head) {
                 self.size = self.size.saturating_sub(removed.size);
                 if removed.is_dir {
                     self.file_count = self.file_count.saturating_sub(removed.file_count);
@@ -120,22 +130,20 @@ impl DiskNode {
                 return Some(removed);
             }
             None
-        } else {
-            if let Some(child) = self.children.get_mut(&head) {
-                let removed = child.remove_recursive(comps);
-                if let Some(ref rem) = removed {
-                    self.size = self.size.saturating_sub(rem.size);
-                    if rem.is_dir {
-                        self.file_count = self.file_count.saturating_sub(rem.file_count);
-                        self.dir_count = self.dir_count.saturating_sub(rem.dir_count + 1);
-                    } else {
-                        self.file_count = self.file_count.saturating_sub(1);
-                    }
+        } else if let Some(child) = self.children.get_mut(head) {
+            let removed = child.remove_slice(tail);
+            if let Some(ref rem) = removed {
+                self.size = self.size.saturating_sub(rem.size);
+                if rem.is_dir {
+                    self.file_count = self.file_count.saturating_sub(rem.file_count);
+                    self.dir_count = self.dir_count.saturating_sub(rem.dir_count + 1);
+                } else {
+                    self.file_count = self.file_count.saturating_sub(1);
                 }
-                removed
-            } else {
-                None
             }
+            removed
+        } else {
+            None
         }
     }
 }
@@ -211,5 +219,23 @@ mod tests {
         assert_eq!(root.size, 0);
         assert_eq!(root.file_count, 0);
         assert!(!root.children.contains_key("downloads"));
+    }
+
+    #[test]
+    fn test_high_volume_insert_performance() {
+        let root_path = PathBuf::from("/home/user");
+        let mut root = DiskNode::new("user".into(), root_path.clone(), true);
+
+        let start = std::time::Instant::now();
+        for i in 0..50_000 {
+            let path = root_path.join(format!("dir_{}/sub_{}/file_{}.bin", i % 50, (i / 50) % 20, i));
+            root.insert(&path, 1024, false, &root_path);
+        }
+        let elapsed = start.elapsed();
+
+        assert_eq!(root.file_count, 50_000);
+        assert_eq!(root.size, 50_000 * 1024);
+        // 50,000 insertions should complete well under 200ms
+        assert!(elapsed.as_millis() < 250, "Insertion of 50k items took too long: {:?}", elapsed);
     }
 }

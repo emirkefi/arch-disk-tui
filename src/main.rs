@@ -36,7 +36,7 @@ use safety::{check_deletion_permission, is_superuser, DeletionRestriction};
     name = "arch-disk-tui",
     author = "Emir <emirlkf@hotmail.com>",
     version = "0.1.0",
-    about = "⚡ Ultra-fast, aesthetic terminal disk usage analyzer & treemap"
+    about = "Ultra-fast, modern terminal disk usage analyzer and heatmap for Linux"
 )]
 struct CliArgs {
     /// Path to analyze (defaults to current directory or system root)
@@ -54,9 +54,15 @@ const PALETTE: [Color; 7] = [
     Color::Rgb(100, 220, 240), // Cyan Glow
 ];
 
+struct ScanItem {
+    path: PathBuf,
+    size: u64,
+    is_dir: bool,
+}
+
 enum ScanMessage {
+    Batch(Vec<ScanItem>),
     Progress { files: usize, current_path: String },
-    Item { path: PathBuf, size: u64, is_dir: bool },
     Finished,
 }
 
@@ -151,28 +157,37 @@ impl App {
         self.root_node.find_node(&self.current_path)
     }
 
-    fn get_filtered_sorted_children(&self) -> Vec<DiskNode> {
+    fn get_filtered_sorted_children(&self) -> Vec<&DiskNode> {
         let Some(node) = self.current_node() else {
             return Vec::new();
         };
+        Self::filter_and_sort_node(node, &self.filter_query, self.sort_order)
+    }
 
-        let mut items: Vec<DiskNode> = node
+    fn filter_and_sort_node<'a>(
+        node: &'a DiskNode,
+        filter_query: &str,
+        sort_order: SortOrder,
+    ) -> Vec<&'a DiskNode> {
+        let filter_lower = if filter_query.is_empty() {
+            None
+        } else {
+            Some(filter_query.to_lowercase())
+        };
+
+        let mut items: Vec<&DiskNode> = node
             .children
             .values()
             .filter(|child| {
-                if self.filter_query.is_empty() {
-                    true
+                if let Some(ref query) = filter_lower {
+                    child.name.to_lowercase().contains(query)
                 } else {
-                    child
-                        .name
-                        .to_lowercase()
-                        .contains(&self.filter_query.to_lowercase())
+                    true
                 }
             })
-            .cloned()
             .collect();
 
-        match self.sort_order {
+        match sort_order {
             SortOrder::SizeDesc => items.sort_by(|a, b| b.size.cmp(&a.size)),
             SortOrder::NameAsc => items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
             SortOrder::FilesDesc => items.sort_by(|a, b| (b.file_count + b.dir_count).cmp(&(a.file_count + a.dir_count))),
@@ -328,7 +343,7 @@ impl App {
 
                     let item_type = if is_dir { "folder" } else { "file" };
                     self.status_notification = Some((
-                        format!("󰄬 Successfully deleted {item_type} '{}' ({})", name, format_size(size)),
+                        format!("Successfully deleted {item_type} '{}' ({})", name, format_size(size)),
                         Instant::now(),
                     ));
                 }
@@ -346,17 +361,41 @@ impl App {
 
 fn start_scanner(root: PathBuf, tx: mpsc::Sender<ScanMessage>) {
     thread::spawn(move || {
+        let is_root_fs = root == PathBuf::from("/");
+
         let walker = jwalk::WalkDir::new(&root)
             .follow_links(false)
-            .skip_hidden(false);
+            .skip_hidden(false)
+            .process_read_dir(move |_depth, _path, _state, children| {
+                if is_root_fs {
+                    children.retain(|dir_entry_result| {
+                        if let Ok(dir_entry) = dir_entry_result {
+                            let path = dir_entry.path();
+                            let path_str = path.to_string_lossy();
+                            !(path_str.starts_with("/proc")
+                                || path_str.starts_with("/sys")
+                                || path_str.starts_with("/dev")
+                                || path_str.starts_with("/run"))
+                        } else {
+                            false
+                        }
+                    });
+                }
+            });
 
         let mut count = 0;
-        for entry in walker {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                let path_str = path.to_string_lossy();
+        let mut batch = Vec::with_capacity(512);
+        let mut last_progress = Instant::now();
 
-                // Skip virtual filesystems if root is /
+        for entry in walker {
+            let Ok(entry) = entry else {
+                continue;
+            };
+
+            let path = entry.path();
+
+            if is_root_fs {
+                let path_str = path.to_string_lossy();
                 if path_str.starts_with("/proc")
                     || path_str.starts_with("/sys")
                     || path_str.starts_with("/dev")
@@ -364,26 +403,46 @@ fn start_scanner(root: PathBuf, tx: mpsc::Sender<ScanMessage>) {
                 {
                     continue;
                 }
+            }
 
-                let meta = entry.metadata().ok();
-                let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-                let size = if is_dir { 0 } else { meta.map(|m| m.len()).unwrap_or(0) };
+            let is_dir = entry.file_type.is_dir();
+            let size = if is_dir {
+                0
+            } else {
+                entry.metadata().map(|m| m.len()).unwrap_or(0)
+            };
 
-                count += 1;
-                if count % 200 == 0 {
-                    let _ = tx.send(ScanMessage::Progress {
-                        files: count,
-                        current_path: path_str.to_string(),
-                    });
+            count += 1;
+            batch.push(ScanItem { path, size, is_dir });
+
+            if batch.len() >= 512 {
+                let to_send = std::mem::replace(&mut batch, Vec::with_capacity(512));
+                if tx.send(ScanMessage::Batch(to_send)).is_err() {
+                    return;
                 }
+            }
 
-                let _ = tx.send(ScanMessage::Item {
-                    path,
-                    size,
-                    is_dir,
-                });
+            if count % 1000 == 0 && last_progress.elapsed() >= Duration::from_millis(80) {
+                last_progress = Instant::now();
+                let current_path = entry.path().to_string_lossy().to_string();
+                if tx.send(ScanMessage::Progress {
+                    files: count,
+                    current_path,
+                }).is_err() {
+                    return;
+                }
             }
         }
+
+        if !batch.is_empty() {
+            let _ = tx.send(ScanMessage::Batch(batch));
+        }
+
+        let _ = tx.send(ScanMessage::Progress {
+            files: count,
+            current_path: String::new(),
+        });
+
         let _ = tx.send(ScanMessage::Finished);
     });
 }
@@ -424,23 +483,33 @@ fn run_app(
     tick_rate: Duration,
     last_tick: &mut Instant,
 ) -> Result<(), Box<dyn Error>> {
+    let mut last_draw = Instant::now();
+    let min_draw_interval = Duration::from_millis(30);
+
     loop {
-        // Drain scanner messages up to a limit per frame to stay snappy
-        let mut processed = 0;
-        while processed < 1000 {
+        let mut had_updates = false;
+        let drain_start = Instant::now();
+
+        // Process batches for up to 15ms per frame to maintain high throughput and UI responsiveness
+        while drain_start.elapsed() < Duration::from_millis(15) {
             match rx.try_recv() {
-                Ok(ScanMessage::Item { path, size, is_dir }) => {
-                    app.root_node.insert(&path, size, is_dir, &app.root_path);
-                    processed += 1;
+                Ok(ScanMessage::Batch(batch)) => {
+                    for item in batch {
+                        app.root_node.insert(&item.path, item.size, item.is_dir, &app.root_path);
+                    }
+                    had_updates = true;
                 }
                 Ok(ScanMessage::Progress { files, current_path }) => {
                     app.scanned_files_count = files;
-                    app.current_scanning_item = current_path;
-                    processed += 1;
+                    if !current_path.is_empty() {
+                        app.current_scanning_item = current_path;
+                    }
+                    had_updates = true;
                 }
                 Ok(ScanMessage::Finished) => {
                     app.scanning = false;
                     app.scan_duration = Some(app.scan_start_time.elapsed());
+                    had_updates = true;
                     break;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -451,11 +520,21 @@ fn run_app(
             }
         }
 
-        terminal.draw(|f| render_ui(f, app))?;
+        let now = Instant::now();
+        if had_updates || now.duration_since(last_draw) >= tick_rate {
+            if now.duration_since(last_draw) >= min_draw_interval {
+                terminal.draw(|f| render_ui(f, app))?;
+                last_draw = Instant::now();
+            }
+        }
 
-        let timeout = tick_rate
-            .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
+        let timeout = if app.scanning {
+            Duration::from_millis(10)
+        } else {
+            tick_rate
+                .checked_sub(last_tick.elapsed())
+                .unwrap_or(Duration::from_millis(10))
+        };
 
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
@@ -543,17 +622,16 @@ fn run_app(
 fn render_ui(f: &mut Frame, app: &mut App) {
     let size = f.area();
 
-    // Dark sleek background
     let bg_block = Block::default().style(Style::default().bg(Color::Rgb(15, 17, 26)));
     f.render_widget(bg_block, size);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Modern Header
+            Constraint::Length(3), // Header
             Constraint::Length(6), // Drive & System Storage Health
-            Constraint::Min(10),   // Content: Tree Navigator + Treemap/Details
-            Constraint::Length(1), // Minimal Bottom Status bar
+            Constraint::Min(10),   // Content: Tree Navigator + Details
+            Constraint::Length(1), // Bottom Status bar
         ])
         .split(size);
 
@@ -578,7 +656,6 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(28), Constraint::Min(20), Constraint::Length(32)])
         .split(area);
 
-    // App Branding & Superuser Status
     let mut logo_spans = vec![
         Span::styled(" 󰣇 ", Style::default().fg(Color::Rgb(23, 147, 209)).bold()),
         Span::styled("ARCH", Style::default().fg(Color::Cyan).bold()),
@@ -603,7 +680,6 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     );
     f.render_widget(logo, header_chunks[0]);
 
-    // Current Breadcrumb / Path Info & Status Toast
     let path_display = app.current_path.to_string_lossy();
     let mut path_spans = vec![
         Span::styled("  Location: ", Style::default().fg(Color::DarkGray)),
@@ -636,7 +712,6 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         .alignment(Alignment::Left);
     f.render_widget(path_widget, header_chunks[1]);
 
-    // Live Scanner Status Indicator
     let status_widget = if app.scanning {
         let elapsed = app.scan_start_time.elapsed().as_secs_f32();
         let dots = match (app.scan_start_time.elapsed().as_millis() / 250) % 4 {
@@ -695,7 +770,6 @@ fn render_disks(f: &mut Frame, app: &App, area: Rect) {
             Color::Rgb(100, 220, 160)
         };
 
-        // Render sleek gradient/block meter
         let meter_width = 18;
         let filled = ((pct / 100.0) * meter_width as f64).round() as usize;
         let filled = filled.clamp(0, meter_width);
@@ -740,22 +814,43 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(area);
 
-    render_explorer(f, app, body_chunks[0]);
-    render_analytics(f, app, body_chunks[1]);
+    let current_node = app.root_node.find_node(&app.current_path);
+    let current_total_size = current_node.map(|n| n.size).unwrap_or(1);
+    let items = current_node
+        .map(|n| App::filter_and_sort_node(n, &app.filter_query, app.sort_order))
+        .unwrap_or_default();
+    let sort_order = app.sort_order;
+    let scanning = app.scanning;
+    let selected_idx = app.list_state.selected();
+
+    render_explorer(
+        f,
+        current_total_size,
+        sort_order,
+        scanning,
+        &mut app.list_state,
+        &items,
+        body_chunks[0],
+    );
+    render_analytics(f, selected_idx, current_total_size, &items, body_chunks[1]);
 }
 
-fn render_explorer(f: &mut Frame, app: &mut App, area: Rect) {
-    let items = app.get_filtered_sorted_children();
-    let current_node = app.current_node();
-    let current_total_size = current_node.map(|n| n.size).unwrap_or(1);
-
-    let sort_label = match app.sort_order {
-        SortOrder::SizeDesc => "Size 󰄼",
-        SortOrder::NameAsc => "Name 󰄾",
-        SortOrder::FilesDesc => "Items 󰄼",
+fn render_explorer(
+    f: &mut Frame,
+    current_total_size: u64,
+    sort_order: SortOrder,
+    scanning: bool,
+    list_state: &mut ListState,
+    items: &[&DiskNode],
+    area: Rect,
+) {
+    let sort_label = match sort_order {
+        SortOrder::SizeDesc => "Size (desc)",
+        SortOrder::NameAsc => "Name (asc)",
+        SortOrder::FilesDesc => "Items (desc)",
     };
 
-    let mut list_items = Vec::new();
+    let mut list_items = Vec::with_capacity(items.len().min(100));
     for (idx, child) in items.iter().enumerate() {
         let color = PALETTE[idx % PALETTE.len()];
         let pct = if current_total_size > 0 {
@@ -766,7 +861,6 @@ fn render_explorer(f: &mut Frame, app: &mut App, area: Rect) {
 
         let icon = if child.is_dir { " " } else { " " };
 
-        // Relative visual proportion bar (mini bullet)
         let bullet_len = ((pct / 100.0) * 8.0).round() as usize;
         let bullet = "■".repeat(bullet_len.max(if pct > 0.5 { 1 } else { 0 }));
 
@@ -788,10 +882,10 @@ fn render_explorer(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     if list_items.is_empty() {
-        let msg = if app.scanning {
-            "  ⏳ Scanning directory in background..."
+        let msg = if scanning {
+            "  Scanning directory in background..."
         } else {
-            "  📭 Empty directory or no items matched"
+            "  Empty directory or no items matched"
         };
         list_items.push(ListItem::new(Line::from(Span::styled(msg, Style::default().fg(Color::DarkGray)))));
     }
@@ -818,26 +912,25 @@ fn render_explorer(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol(" ❯ ");
 
-    f.render_stateful_widget(list_widget, area, &mut app.list_state);
+    f.render_stateful_widget(list_widget, area, list_state);
 }
 
-fn render_analytics(f: &mut Frame, app: &App, area: Rect) {
+fn render_analytics(
+    f: &mut Frame,
+    selected_idx: Option<usize>,
+    current_total: u64,
+    items: &[&DiskNode],
+    area: Rect,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(8), Constraint::Min(8)])
         .split(area);
 
-    let items = app.get_filtered_sorted_children();
-    let selected_node = app
-        .list_state
-        .selected()
-        .and_then(|idx| items.get(idx))
-        .or_else(|| items.first());
+    let selected_node = selected_idx
+        .and_then(|idx| items.get(idx).copied())
+        .or_else(|| items.first().copied());
 
-    let current_node = app.current_node();
-    let current_total = current_node.map(|n| n.size).unwrap_or(1);
-
-    // Selected Item Detail Card
     let mut details_lines = Vec::new();
     if let Some(target) = selected_node {
         let pct = if current_total > 0 {
@@ -880,7 +973,6 @@ fn render_analytics(f: &mut Frame, app: &App, area: Rect) {
     );
     f.render_widget(detail_widget, chunks[0]);
 
-    // Visual Distribution Blocks / Treemap Breakdown
     let mut treemap_lines = Vec::new();
     treemap_lines.push(Line::from(vec![
         Span::styled(" Top Space Consumers ", Style::default().fg(Color::Cyan).bold()),
@@ -888,7 +980,7 @@ fn render_analytics(f: &mut Frame, app: &App, area: Rect) {
     ]));
     treemap_lines.push(Line::from(""));
 
-    let top_items: Vec<&DiskNode> = items.iter().take(6).collect();
+    let top_items: Vec<&DiskNode> = items.iter().copied().take(6).collect();
 
     if top_items.is_empty() {
         treemap_lines.push(Line::from(Span::styled("  Analyzing space...", Style::default().fg(Color::DarkGray))));
@@ -963,7 +1055,7 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
     f.render_widget(Clear, popup_area);
 
     let help_text = vec![
-        Line::from(Span::styled("⚡ Keyboard Shortcuts & Navigation", Style::default().fg(Color::Cyan).bold())),
+        Line::from(Span::styled("Keyboard Shortcuts & Navigation", Style::default().fg(Color::Cyan).bold())),
         Line::from(""),
         Line::from(vec![
             Span::styled("  j / Down Arrow      ", Style::default().fg(Color::Yellow).bold()),
@@ -983,7 +1075,7 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  s                   ", Style::default().fg(Color::Yellow).bold()),
-            Span::styled("Cycle sort: Size 󰄼 / Name 󰄾 / Item Count", Style::default().fg(Color::White)),
+            Span::styled("Cycle sort: Size / Name / Item Count", Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::styled("  /                   ", Style::default().fg(Color::Yellow).bold()),
@@ -1007,7 +1099,7 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  🛡 Safety Note:      ", Style::default().fg(Color::Yellow).bold()),
+            Span::styled("  Safety Policy:      ", Style::default().fg(Color::Yellow).bold()),
             Span::styled("System files/folders are protected unless run as superuser.", Style::default().fg(Color::Rgb(180, 190, 210))),
         ]),
         Line::from(""),
@@ -1154,7 +1246,7 @@ fn render_system_protected_modal(f: &mut Frame, dialog: &SystemProtectedDialog, 
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  💡 Superuser Requirement:", Style::default().fg(Color::Yellow).bold()),
+            Span::styled("  Superuser Requirement:", Style::default().fg(Color::Yellow).bold()),
         ]),
         Line::from(vec![
             Span::styled("    To delete system files, re-launch arch-disk-tui with superuser privileges:", Style::default().fg(Color::DarkGray)),
@@ -1212,7 +1304,6 @@ fn render_message_modal(f: &mut Frame, dialog: &MessageDialog, area: Rect) {
     let popup = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
     f.render_widget(popup, popup_area);
 }
-
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
