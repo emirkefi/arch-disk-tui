@@ -1,15 +1,15 @@
-<div align="center">
+<div id="top" align="center">
 
   <img src="assets/screenshot.png" alt="arch-disk-tui screenshot" width="94%" />
 
   <br/><br/>
 
   <a href="https://github.com/emirkefi/arch-disk-tui">
-    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=28&duration=2800&pause=900&color=7DCFFF&center=true&vCenter=true&width=620&lines=%E2%9A%A1+ARCH%C2%B7DISK%C2%B7TUI;Blazingly+Fast+Storage+Analyzer;Next-Gen+Terminal+Heatmap;Vim-Powered+Directory+Explorer" alt="Typing SVG" />
+    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=28&duration=2800&pause=900&color=7DCFFF&center=true&vCenter=true&width=620&lines=ARCH%C2%B7DISK%C2%B7TUI;High-Performance+Storage+Analyzer;Interactive+Terminal+Heatmap;Vim-Style+Directory+Explorer" alt="Typing SVG" />
   </a>
 
   <p align="center">
-    <strong>A blazingly fast, modern, and aesthetic Terminal Disk Space Analyzer & Heatmap for Linux / Arch Linux</strong>
+    <strong>A high-performance, modern terminal disk space analyzer and heatmap for Linux</strong>
   </p>
 
   <p align="center">
@@ -21,36 +21,41 @@
   </p>
 
   <p align="center">
-    <a href="#-quick-install">🚀 Quick Install</a> •
-    <a href="#-features">✨ Features</a> •
-    <a href="#-interactive-keybindings">🎮 Controls</a> •
-    <a href="#-uninstall">🗑️ Uninstall</a>
+    <a href="#quick-install"><strong>Quick Install</strong></a> &nbsp;&bull;&nbsp;
+    <a href="#features"><strong>Features</strong></a> &nbsp;&bull;&nbsp;
+    <a href="#controls"><strong>Controls</strong></a> &nbsp;&bull;&nbsp;
+    <a href="#usage"><strong>Usage</strong></a> &nbsp;&bull;&nbsp;
+    <a href="#uninstall"><strong>Uninstall</strong></a>
   </p>
 
 </div>
 
 ---
 
-## ⚡ Overview
+<a id="arch-disk-tui"></a>
+## Overview
 
-**`arch-disk-tui`** is an ultra-performant, intuitive terminal disk analyzer engineered in Rust. Inspired by the speed of *WizTree* and the visual clarity of modern Unix tools, it delivers real-time non-blocking directory scanning, live partition health telemetry, Vim-style hierarchical navigation, and colorful proportional heatmap blocks.
+**`arch-disk-tui`** is a high-performance terminal disk analyzer engineered in Rust. Inspired by the speed of *WizTree* and the visual clarity of modern Unix utilities, it delivers real-time non-blocking directory scanning, live partition health telemetry, Vim-style hierarchical navigation, and proportional colored distribution heatmaps.
 
-### 🌟 Why arch-disk-tui?
+---
+
+<a id="features"></a>
+## Features
 
 <table>
   <tr>
     <td width="50%">
-      <h3>🚀 Blazing Fast & Non-Blocking</h3>
+      <h3>High Performance & Non-Blocking</h3>
       <ul>
         <li>Multi-threaded traversal powered by <code>jwalk</code></li>
-        <li>Indexed <strong>540,000+ files in seconds</strong></li>
-        <li>UI stays 100% responsive and snappy while indexing</li>
+        <li>Indexes <strong>500,000+ files in seconds</strong></li>
+        <li>UI stays responsive and smooth while scanning in the background</li>
       </ul>
     </td>
     <td width="50%">
-      <h3>🎨 Cyberpunk & Arch-Themed UI</h3>
+      <h3>Modern Terminal UI</h3>
       <ul>
-        <li>Crafted with Ratatui and modern rounded borders</li>
+        <li>Crafted with Ratatui featuring clean rounded borders</li>
         <li>Arch Ice Blue, Neon Pink, and Mint accents</li>
         <li>Proportional colored distribution heatmaps</li>
       </ul>
@@ -58,19 +63,19 @@
   </tr>
   <tr>
     <td width="50%">
-      <h3>📂 Deep Interactive Exploration</h3>
+      <h3>Interactive Exploration</h3>
       <ul>
-        <li>Vim keys (<code>h</code>, <code>j</code>, <code>k</code>, <code>l</code>) or Arrow keys</li>
-        <li>Drill down into subdirectories or jump to parent in 1 keypress</li>
-        <li>Real-time fuzzy search & filtering (<code>/</code>)</li>
+        <li>Vim keys (<code>h</code>, <code>j</code>, <code>k</code>, <code>l</code>) or standard arrow keys</li>
+        <li>Instant drill-down into subdirectories and single-key navigation back</li>
+        <li>Real-time fuzzy search and filtering (<code>/</code>)</li>
       </ul>
     </td>
     <td width="50%">
-      <h3>🛡️ Safe Linux Virtual FS Filtering</h3>
+      <h3>Virtual Filesystem Filtering</h3>
       <ul>
         <li>Automatically skips pseudo-filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/run</code>)</li>
-        <li>No infinite recursion loops</li>
-        <li>Zero phantom 128TB allocation glitches</li>
+        <li>Protection against infinite recursion loops</li>
+        <li>Eliminates phantom multi-terabyte virtual allocation calculations</li>
       </ul>
     </td>
   </tr>
@@ -78,18 +83,21 @@
 
 ---
 
-## 🚀 Quick Install
+<a id="quick-install"></a>
+## Quick Install
 
-### ⚡ One-Line Automated Installer
+### Automated Installer
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/install.sh | bash
 ```
 
 <details>
-<summary><b>📦 Alternative Install Methods (Cargo, Source, Make)</b></summary>
+<summary><strong>Alternative Installation Methods (Cargo, Source, Make)</strong></summary>
 <br/>
 
 #### Option A: Build from Source
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/emirkefi/arch-disk-tui.git
@@ -103,11 +111,13 @@ cargo build --release
 ```
 
 #### Option B: Direct Cargo Install
+
 ```bash
 cargo install --path .
 ```
 
 #### Option C: Standard Makefile
+
 ```bash
 make
 sudo make install
@@ -117,29 +127,29 @@ sudo make install
 
 ---
 
-## 🎮 Interactive Keybindings
+<a id="controls"></a>
+<a id="keybindings"></a>
+<a id="interactive-keybindings"></a>
+## Interactive Keybindings
 
-<div align="center">
-
-| Shortcut | Description | Action |
+| Shortcut | Action | Description |
 |:---:|:---|:---|
-| <kbd>j</kbd> / <kbd>↓</kbd> | Move Selection Down | Navigate current directory items |
-| <kbd>k</kbd> / <kbd>↑</kbd> | Move Selection Up | Navigate current directory items |
+| <kbd>j</kbd> / <kbd>&darr;</kbd> | Move Selection Down | Navigate current directory items |
+| <kbd>k</kbd> / <kbd>&uarr;</kbd> | Move Selection Up | Navigate current directory items |
 | <kbd>l</kbd> / <kbd>Enter</kbd> | Drill Down | Enter highlighted directory |
 | <kbd>h</kbd> / <kbd>Backspace</kbd> | Navigate Back | Return to parent directory |
-| <kbd>s</kbd> | Cycle Sort Order | Switch between **Size 󰄼**, **Name 󰄾**, and **Count** |
-| <kbd>/</kbd> | Live Search Filter | Instant real-time regex/name search |
+| <kbd>s</kbd> | Cycle Sort Order | Switch between **Size (descending)**, **Name (alphabetical)**, and **Count** |
+| <kbd>/</kbd> | Search Filter | Instant real-time regex/name search |
 | <kbd>d</kbd> / <kbd>Del</kbd> | Safe Delete | Delete highlighted file or folder (with confirmation modal) |
 | <kbd>Esc</kbd> | Dismiss | Clear search query or close dialogs |
 | <kbd>r</kbd> | Refresh Drives | Poll live filesystem storage metrics |
 | <kbd>?</kbd> | Cheatsheet | Open interactive modal help window |
 | <kbd>q</kbd> | Safe Exit | Restore terminal state and exit |
 
-</div>
-
 ---
 
-## 🛡️ Safe File & Folder Deletion
+<a id="safe-deletion"></a>
+## Safe File & Folder Deletion
 
 `arch-disk-tui` allows users to clean up disk space directly from the tool with multi-layered safety guards:
 
@@ -151,7 +161,8 @@ sudo make install
 
 ---
 
-## 🎯 Usage Examples
+<a id="usage"></a>
+## Usage Examples
 
 ```bash
 # Scan current directory
@@ -169,7 +180,8 @@ arch-disk-tui --help
 
 ---
 
-## 🗑️ Uninstall
+<a id="uninstall"></a>
+## Uninstall
 
 Cleanly remove `arch-disk-tui` with one command:
 
@@ -182,6 +194,7 @@ curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/uninsta
 ```
 
 Or via Makefile:
+
 ```bash
 sudo make uninstall
 ```
@@ -190,10 +203,8 @@ sudo make uninstall
 
 <div align="center">
 
-  Made with ❤️ for Arch Linux & Rust enthusiasts by <a href="https://github.com/emirkefi"><strong>Emir</strong></a>
+  <p>Maintained for Arch Linux and Rust enthusiasts by <a href="https://github.com/emirkefi"><strong>Emir</strong></a></p>
 
-  <br/>
-
-  <a href="#arch-disk-tui">⬆ Back to Top</a>
+  <a href="#top">&uarr; Back to Top</a>
 
 </div>
