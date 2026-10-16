@@ -18,6 +18,8 @@
     <a href="https://github.com/emirkefi/arch-disk-tui/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-7dcfff?style=for-the-badge" alt="License" /></a>
     <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust_2024-e43717?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" /></a>
     <a href="https://archlinux.org"><img src="https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=archlinux&logoColor=white" alt="Arch Linux" /></a>
+    <a href="https://crates.io/crates/arch-disk-tui"><img src="https://img.shields.io/crates/v/arch-disk-tui?style=for-the-badge&logo=rust&color=e43717" alt="crates.io version" /></a>
+    <a href="https://crates.io/crates/arch-disk-tui"><img src="https://img.shields.io/crates/d/arch-disk-tui?style=for-the-badge&logo=rust&color=0997e5" alt="crates.io downloads" /></a>
   </p>
 
   <p align="center">
@@ -85,6 +87,12 @@
 
 <a id="quick-install"></a>
 ## Quick Install
+
+### Crates.io (Recommended)
+
+```bash
+cargo install arch-disk-tui
+```
 
 ### Automated Installer
 
