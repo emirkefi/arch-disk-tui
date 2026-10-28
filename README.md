@@ -58,13 +58,6 @@
 ```bash
 cargo install arch-disk-tui
 ```
-
-### Arch Linux (AUR / PKGBUILD)
-
-```bash
-yay -S arch-disk-tui-bin
-```
-
 <details>
 <summary><strong>Alternative Install &amp; Uninstall Methods (Curl Script, Source, Make)</strong></summary>
 <br/>
