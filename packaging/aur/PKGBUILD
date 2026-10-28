@@ -1,0 +1,20 @@
+# Maintainer: Emir <emirlkf@hotmail.com>
+pkgname=arch-disk-tui-bin
+_pkgname=arch-disk-tui
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="A fast, modern terminal disk space analyzer and heatmap for Linux"
+arch=('x86_64')
+url="https://github.com/emirkefi/arch-disk-tui"
+license=('MIT')
+provides=('arch-disk-tui')
+conflicts=('arch-disk-tui')
+source=("${_pkgname}-${pkgver}::https://github.com/emirkefi/${_pkgname}/releases/download/v${pkgver}/${_pkgname}-linux-x86_64"
+        "LICENSE::https://raw.githubusercontent.com/emirkefi/${_pkgname}/master/LICENSE")
+sha256sums=('SKIP'
+            'SKIP')
+
+package() {
+    install -Dm755 "${srcdir}/${_pkgname}-${pkgver}" "${pkgdir}/usr/bin/${_pkgname}"
+    install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

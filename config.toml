@@ -1,0 +1,15 @@
+# arch-disk-tui configuration file
+# Place at ~/.config/arch-disk-tui/config.toml or ./config.toml
+
+# Color theme: "arch" (default), "catppuccin", "gruvbox", "mono", or "no_color"
+# Note: Setting the NO_COLOR environment variable automatically activates "no_color".
+theme = "arch"
+
+# Icon mode: "auto" (default), "nerd", "ascii", or "none"
+icons = "auto"
+
+# Stay on the same filesystem as the scan root (equivalent to -x / --one-file-system)
+one_file_system = false
+
+# Default directory/file patterns to exclude from scans
+exclude = []

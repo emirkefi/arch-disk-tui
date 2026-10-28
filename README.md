@@ -4,18 +4,16 @@
 
   <br/><br/>
 
-  <a href="https://github.com/emirkefi/arch-disk-tui">
-    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=28&duration=2800&pause=900&color=7DCFFF&center=true&vCenter=true&width=620&lines=ARCH%C2%B7DISK%C2%B7TUI;High-Performance+Storage+Analyzer;Interactive+Terminal+Heatmap;Vim-Style+Directory+Explorer" alt="Typing SVG" />
-  </a>
+  <h1>ARCH·DISK·TUI</h1>
 
   <p align="center">
-    <strong>A high-performance, modern terminal disk space analyzer and heatmap for Linux</strong>
+    <strong>A fast, modern terminal disk space analyzer and heatmap for Linux</strong>
   </p>
 
   <p align="center">
     <a href="https://github.com/emirkefi/arch-disk-tui/stargazers"><img src="https://img.shields.io/github/stars/emirkefi/arch-disk-tui?style=for-the-badge&logo=star&color=ffc66d&logoColor=white" alt="Stars" /></a>
     <a href="https://github.com/emirkefi/arch-disk-tui/releases"><img src="https://img.shields.io/github/v/release/emirkefi/arch-disk-tui?style=for-the-badge&color=78e6a0" alt="Release" /></a>
-    <a href="https://github.com/emirkefi/arch-disk-tui/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-7dcfff?style=for-the-badge" alt="License" /></a>
+    <a href="https://github.com/emirkefi/arch-disk-tui/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT-7dcfff?style=for-the-badge" alt="License" /></a>
     <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust_2024-e43717?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" /></a>
     <a href="https://archlinux.org"><img src="https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=archlinux&logoColor=white" alt="Arch Linux" /></a>
     <a href="https://crates.io/crates/arch-disk-tui"><img src="https://img.shields.io/crates/v/arch-disk-tui?style=for-the-badge&logo=rust&color=e43717" alt="crates.io version" /></a>
@@ -23,112 +21,74 @@
   </p>
 
   <p align="center">
-    <a href="#quick-install"><strong>Quick Install</strong></a> &nbsp;&bull;&nbsp;
+    <a href="#install"><strong>Install</strong></a> &nbsp;&bull;&nbsp;
     <a href="#features"><strong>Features</strong></a> &nbsp;&bull;&nbsp;
     <a href="#controls"><strong>Controls</strong></a> &nbsp;&bull;&nbsp;
-    <a href="#usage"><strong>Usage</strong></a> &nbsp;&bull;&nbsp;
-    <a href="#uninstall"><strong>Uninstall</strong></a>
+    <a href="#cli--config"><strong>CLI &amp; Config</strong></a>
   </p>
 
 </div>
 
 ---
 
-<a id="arch-disk-tui"></a>
 ## Overview
 
-**`arch-disk-tui`** is a high-performance terminal disk analyzer engineered in Rust. Inspired by the speed of *WizTree* and the visual clarity of modern Unix utilities, it delivers real-time non-blocking directory scanning, live partition health telemetry, Vim-style hierarchical navigation, and proportional colored distribution heatmaps.
+**`arch-disk-tui`** is a fast terminal disk-space analyzer and interactive heatmap written in Rust. Inspired by *WizTree* and *ncdu*, it provides non-blocking multi-threaded directory scanning, inline share bars, a 2D block treemap toggle, a global Top-N largest files view, and safe FreeDesktop Trash integration.
 
 ---
 
 <a id="features"></a>
-## Features
+## Highlights
 
-<table>
-  <tr>
-    <td width="50%">
-      <h3>High Performance & Non-Blocking</h3>
-      <ul>
-        <li>Multi-threaded traversal powered by <code>jwalk</code></li>
-        <li>Indexes <strong>500,000+ files in seconds</strong></li>
-        <li>UI stays responsive and smooth while scanning in the background</li>
-      </ul>
-    </td>
-    <td width="50%">
-      <h3>Modern Terminal UI</h3>
-      <ul>
-        <li>Crafted with Ratatui featuring clean rounded borders</li>
-        <li>Arch Ice Blue, Neon Pink, and Mint accents</li>
-        <li>Proportional colored distribution heatmaps</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>Interactive Exploration</h3>
-      <ul>
-        <li>Vim keys (<code>h</code>, <code>j</code>, <code>k</code>, <code>l</code>) or standard arrow keys</li>
-        <li>Instant drill-down into subdirectories and single-key navigation back</li>
-        <li>Real-time fuzzy search and filtering (<code>/</code>)</li>
-      </ul>
-    </td>
-    <td width="50%">
-      <h3>Virtual Filesystem Filtering</h3>
-      <ul>
-        <li>Automatically skips pseudo-filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/run</code>)</li>
-        <li>Protection against infinite recursion loops</li>
-        <li>Eliminates phantom multi-terabyte virtual allocation calculations</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+- **Inline Size Bars & Heatmap**: Every row displays a proportional bar showing its share of the parent directory, colored by file category (media, archives, code, caches, documents, binaries) with optional Nerd Font or ASCII icons.
+- **Header Partition Gauge & Breadcrumbs**: Live partition usage bar (`412 GB / 512 GB · 81%`) that turns yellow and red as it fills, paired with a clickable breadcrumb bar (`/ › home › emir › Downloads`).
+- **2D Treemap & Top-N Files Views**: Toggle a 2D proportional block treemap (`t`) or view the largest individual files across the entire scan (`f`).
+- **Safe Trash & Batch Multi-Select**: Mark multiple items with `Space` (`3 selected · 8.4 GB`), move to the FreeDesktop Trash by default (`d`), or permanently delete (`D`) with system-file protection guards.
+- **Accurate Accounting**: Deduplicates hard links by `(dev, ino)`, skips symlinks and pseudo-filesystems (`/proc`, `/sys`, `/dev`, `/run`), and surfaces permission-denied folders with a lock indicator (`[needs sudo]`).
+- **Themes & Scripting**: Built-in themes (`arch`, `catppuccin`, `gruvbox`, `mono`, plus `NO_COLOR` support), `config.toml` support, and headless `--export-json` / `--export-csv` flags.
 
 ---
 
+<a id="install"></a>
 <a id="quick-install"></a>
-## Quick Install
+## Install
 
-### Crates.io (Recommended)
+### Cargo (crates.io)
 
 ```bash
 cargo install arch-disk-tui
 ```
 
-### Automated Installer
+### Arch Linux (AUR / PKGBUILD)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/install.sh | bash
+yay -S arch-disk-tui-bin
 ```
 
 <details>
-<summary><strong>Alternative Installation Methods (Cargo, Source, Make)</strong></summary>
+<summary><strong>Alternative Install &amp; Uninstall Methods (Curl Script, Source, Make)</strong></summary>
 <br/>
 
-#### Option A: Build from Source
+#### Automated Install Script (downloads binary or builds from `master`)
 
 ```bash
-# 1. Clone the repository
+curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/master/install.sh | bash
+```
+
+#### Build from Source
+
+```bash
 git clone https://github.com/emirkefi/arch-disk-tui.git
 cd arch-disk-tui
-
-# 2. Build release binary
 cargo build --release
-
-# 3. Run
 ./target/release/arch-disk-tui
 ```
 
-#### Option B: Direct Cargo Install
+#### Uninstall
 
 ```bash
-cargo install --path .
-```
-
-#### Option C: Standard Makefile
-
-```bash
-make
-sudo make install
+curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/master/uninstall.sh | bash
+# Or if using Makefile: sudo make uninstall
 ```
 
 </details>
@@ -136,83 +96,54 @@ sudo make install
 ---
 
 <a id="controls"></a>
-<a id="keybindings"></a>
-<a id="interactive-keybindings"></a>
-## Interactive Keybindings
+## Controls
 
-| Shortcut | Action | Description |
-|:---:|:---|:---|
-| <kbd>j</kbd> / <kbd>&darr;</kbd> | Move Selection Down | Navigate current directory items |
-| <kbd>k</kbd> / <kbd>&uarr;</kbd> | Move Selection Up | Navigate current directory items |
-| <kbd>l</kbd> / <kbd>Enter</kbd> | Drill Down | Enter highlighted directory |
-| <kbd>h</kbd> / <kbd>Backspace</kbd> | Navigate Back | Return to parent directory |
-| <kbd>s</kbd> | Cycle Sort Order | Switch between **Size (descending)**, **Name (alphabetical)**, and **Count** |
-| <kbd>/</kbd> | Search Filter | Instant real-time regex/name search |
-| <kbd>d</kbd> / <kbd>Del</kbd> | Safe Delete | Delete highlighted file or folder (with confirmation modal) |
-| <kbd>Esc</kbd> | Dismiss | Clear search query or close dialogs |
-| <kbd>r</kbd> | Refresh Drives | Poll live filesystem storage metrics |
-| <kbd>?</kbd> | Cheatsheet | Open interactive modal help window |
-| <kbd>q</kbd> | Safe Exit | Restore terminal state and exit |
-
----
-
-<a id="safe-deletion"></a>
-## Safe File & Folder Deletion
-
-`arch-disk-tui` allows users to clean up disk space directly from the tool with multi-layered safety guards:
-
-- **Always Confirms**: Every single deletion requires explicit confirmation via an interactive modal displaying item type, full path, file size, and subdirectory/file counts.
-- **System File Protection**: Core system hierarchies (`/etc`, `/usr`, `/var`, `/boot`, `/bin`, `/lib`, `/opt`, `/root`, etc.) and system/root-owned files cannot be deleted by regular users.
-- **Personal Scope**: Standard users can only delete their own personal, downloaded, or user-created files (e.g. `~/Downloads`, `~/Projects`, external drives, user files).
-- **Superuser Support**: When connected with superuser privileges (e.g. `sudo arch-disk-tui`), system items can be deleted, accompanied by high-visibility caution alerts and warnings.
-- **Root Shield**: The filesystem root (`/`) and active scan root cannot be deleted under any circumstances.
+| Key / Mouse | Action |
+|:---:|:---|
+| <kbd>j</kbd> / <kbd>k</kbd> / <kbd>&uarr;</kbd> / <kbd>&darr;</kbd> / Scroll | Move selection up or down |
+| <kbd>g</kbd> / <kbd>G</kbd> | Jump to top / bottom |
+| <kbd>Ctrl+d</kbd> / <kbd>Ctrl+u</kbd> | Half-page scroll down / up |
+| <kbd>l</kbd> / <kbd>Enter</kbd> / Double-Click | Enter directory (or locate file in Top-N view) |
+| <kbd>h</kbd> / <kbd>Backspace</kbd> / Right-Click | Go back to parent directory (remembers cursor position) |
+| <kbd>~</kbd> | Jump to `$HOME` directory |
+| <kbd>Space</kbd> | Mark / unmark item for multi-select batch actions |
+| <kbd>d</kbd> | Move selected or marked item(s) to FreeDesktop Trash |
+| <kbd>D</kbd> / <kbd>Del</kbd> | Permanently delete selected or marked item(s) |
+| <kbd>s</kbd> / <kbd>S</kbd> | Cycle sort mode (`Size`, `Name`, `Count`) / Reverse sort direction |
+| <kbd>/</kbd> | Live search prompt with match count and character highlighting |
+| <kbd>t</kbd> | Toggle 2D proportional block Treemap view |
+| <kbd>f</kbd> | Toggle global Top-N largest files view |
+| <kbd>y</kbd> / <kbd>o</kbd> | Copy path to clipboard (`y`) / Open in `$EDITOR` or `xdg-open` (`o`) |
+| <kbd>T</kbd> / <kbd>r</kbd> | Cycle color theme (`T`) / Refresh partition metrics (`r`) |
+| <kbd>?</kbd> / <kbd>q</kbd> | Open help cheatsheet (`?`) / Quit (`q`) |
 
 ---
 
+<a id="cli--config"></a>
 <a id="usage"></a>
-## Usage Examples
+## CLI & Configuration
 
 ```bash
-# Scan current directory
+# Analyze current directory or a specific path
 arch-disk-tui
+arch-disk-tui /var
 
-# Scan root partition
-arch-disk-tui /
+# Stay on one filesystem (like du -x) and exclude patterns
+arch-disk-tui / -x --exclude node_modules --exclude .git
 
-# Scan home folder
-arch-disk-tui ~
+# Choose a theme or icon mode
+arch-disk-tui --theme catppuccin --icons nerd
 
-# Check build help
-arch-disk-tui --help
+# Export scan results to JSON or CSV for scripting
+arch-disk-tui ~/Projects --export-json report.json
+arch-disk-tui ~/Projects --export-csv report.csv
 ```
 
----
+Optional persistent settings can be placed in `~/.config/arch-disk-tui/config.toml`:
 
-<a id="uninstall"></a>
-## Uninstall
-
-Cleanly remove `arch-disk-tui` with one command:
-
-```bash
-# Using the automated uninstaller
-./uninstall.sh
-
-# Or via remote curl
-curl -fsSL https://raw.githubusercontent.com/emirkefi/arch-disk-tui/main/uninstall.sh | bash
+```toml
+theme = "arch"          # "arch", "catppuccin", "gruvbox", "mono", "no_color"
+icons = "auto"          # "auto", "nerd", "ascii", "none"
+one_file_system = false
+exclude = ["node_modules", ".git"]
 ```
-
-Or via Makefile:
-
-```bash
-sudo make uninstall
-```
-
----
-
-<div align="center">
-
-  <p>Maintained for Arch Linux and Rust enthusiasts by <a href="https://github.com/emirkefi"><strong>Emir</strong></a></p>
-
-  <a href="#top">&uarr; Back to Top</a>
-
-</div>

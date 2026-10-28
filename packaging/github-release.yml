@@ -1,0 +1,47 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Attach Release Asset (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package binary
+        run: |
+          cp target/${{ matrix.target }}/release/arch-disk-tui arch-disk-tui-linux-${{ matrix.arch }}
+          tar -czf arch-disk-tui-linux-${{ matrix.arch }}.tar.gz -C target/${{ matrix.target }}/release arch-disk-tui
+          sha256sum arch-disk-tui-linux-${{ matrix.arch }} arch-disk-tui-linux-${{ matrix.arch }}.tar.gz > sha256sums.txt
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            arch-disk-tui-linux-${{ matrix.arch }}
+            arch-disk-tui-linux-${{ matrix.arch }}.tar.gz
+            sha256sums.txt
+          generate_release_notes: true
