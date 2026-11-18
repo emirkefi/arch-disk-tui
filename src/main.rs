@@ -6,15 +6,15 @@ use crossterm::{
         MouseEvent, MouseEventKind,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
-    Frame, Terminal,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -29,10 +29,10 @@ use std::{
 use sysinfo::Disks;
 
 mod model;
-use model::{format_count, format_size, DiskNode};
+use model::{DiskNode, format_count, format_size};
 
 mod safety;
-use safety::{check_deletion_permission, is_superuser, DeletionRestriction};
+use safety::{DeletionRestriction, check_deletion_permission, is_superuser};
 
 mod theme;
 use theme::{AppConfig, IconMode, Theme, ThemeName};
@@ -187,7 +187,7 @@ struct App {
     last_click: Option<(Instant, usize)>,
     explorer_inner_area: Rect,
     treemap_rects: Vec<(Rect, usize)>,
-    breadcrumb_targets: Vec<( u16, u16, PathBuf )>,
+    breadcrumb_targets: Vec<(u16, u16, PathBuf)>,
 }
 
 impl App {
@@ -348,8 +348,29 @@ impl App {
         self.list_state.select(Some(0));
     }
 
-    fn next_item(&mut self) {
+    /// Number of items the cursor may move over. On the treemap page only the
+    /// first TREEMAP_MAX_BLOCKS items are drawn, so the cursor must not leave them.
+    fn nav_len(&self) -> usize {
         let len = self.get_active_items().len();
+        if self.view_mode == ViewMode::Treemap {
+            len.min(TREEMAP_MAX_BLOCKS)
+        } else {
+            len
+        }
+    }
+
+    /// Pull the selection back onto a visible block (used when entering the treemap page).
+    fn clamp_selection(&mut self) {
+        let len = self.nav_len();
+        if let Some(sel) = self.list_state.selected() {
+            if len > 0 && sel >= len {
+                self.list_state.select(Some(len - 1));
+            }
+        }
+    }
+
+    fn next_item(&mut self) {
+        let len = self.nav_len();
         if len == 0 {
             return;
         }
@@ -361,7 +382,7 @@ impl App {
     }
 
     fn previous_item(&mut self) {
-        let len = self.get_active_items().len();
+        let len = self.nav_len();
         if len == 0 {
             return;
         }
@@ -385,14 +406,14 @@ impl App {
     }
 
     fn jump_bottom(&mut self) {
-        let len = self.get_active_items().len();
+        let len = self.nav_len();
         if len > 0 {
             self.list_state.select(Some(len - 1));
         }
     }
 
     fn half_page_down(&mut self) {
-        let len = self.get_active_items().len();
+        let len = self.nav_len();
         if len == 0 {
             return;
         }
@@ -402,7 +423,7 @@ impl App {
     }
 
     fn half_page_up(&mut self) {
-        let len = self.get_active_items().len();
+        let len = self.nav_len();
         if len == 0 {
             return;
         }
@@ -487,10 +508,8 @@ impl App {
             self.current_path = home.clone();
             self.filter_query.clear();
             self.restore_cursor_for(&home, None);
-            self.status_notification = Some((
-                format!("Jumped to ~ ({})", home.display()),
-                Instant::now(),
-            ));
+            self.status_notification =
+                Some((format!("Jumped to ~ ({})", home.display()), Instant::now()));
             None
         } else {
             Some(home)
@@ -569,10 +588,7 @@ impl App {
         };
         if let Some(path_str) = target_path {
             copy_to_clipboard(&path_str);
-            self.status_notification = Some((
-                format!("Copied path: {path_str}"),
-                Instant::now(),
-            ));
+            self.status_notification = Some((format!("Copied path: {path_str}"), Instant::now()));
         }
     }
 
@@ -628,8 +644,9 @@ impl App {
                 Err(DeletionRestriction::RootFilesystem) => {
                     self.modal = Some(Modal::Message(MessageDialog {
                         title: "Action Forbidden".into(),
-                        message: "The root directory '/' cannot be deleted under any circumstances!"
-                            .into(),
+                        message:
+                            "The root directory '/' cannot be deleted under any circumstances!"
+                                .into(),
                         is_error: true,
                     }));
                     return;
@@ -1059,7 +1076,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, cursor::Hide)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        cursor::Hide
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -1147,23 +1169,18 @@ fn open_selected_external(
 
     let res = Command::new("xdg-open")
         .arg(&path)
-        .stdin( std::process::Stdio::null() )
-        .stdout( std::process::Stdio::null() )
-        .stderr( std::process::Stdio::null() )
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn();
 
     match res {
         Ok(_) => {
-            app.status_notification = Some((
-                format!("Opened '{}'", path.display()),
-                Instant::now(),
-            ));
+            app.status_notification =
+                Some((format!("Opened '{}'", path.display()), Instant::now()));
         }
         Err(e) => {
-            app.status_notification = Some((
-                format!("Failed to open: {e}"),
-                Instant::now(),
-            ));
+            app.status_notification = Some((format!("Failed to open: {e}"), Instant::now()));
         }
     }
 
@@ -1310,19 +1327,13 @@ fn run_app(
                     } else {
                         match key.code {
                             KeyCode::Char('q') => return Ok(()),
-                            KeyCode::Char('c')
-                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                            {
-                                return Ok(())
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                return Ok(());
                             }
-                            KeyCode::Char('d')
-                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                            {
+                            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.half_page_down();
                             }
-                            KeyCode::Char('u')
-                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                            {
+                            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.half_page_up();
                             }
                             KeyCode::Char('?') => app.modal = Some(Modal::Help),
@@ -1336,6 +1347,7 @@ fn run_app(
                                     ViewMode::Treemap => ViewMode::List,
                                     _ => ViewMode::Treemap,
                                 };
+                                app.clamp_selection();
                             }
                             KeyCode::Char('T') => {
                                 let next_name = app.theme.name.next();
@@ -1449,8 +1461,8 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
             let col = mouse.column;
             let row = mouse.row;
 
-            // Check breadcrumb clicks in header
-            if row == 1 {
+            // Check breadcrumb clicks in header (the header is hidden on the treemap page)
+            if row == 1 && app.view_mode != ViewMode::Treemap {
                 for (x_start, x_end, target_path) in app.breadcrumb_targets.clone() {
                     if col >= x_start && col < x_end {
                         if target_path != app.current_path {
@@ -1477,9 +1489,9 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
                             && row >= rect.y
                             && row < rect.y + rect.height
                         {
-                            let is_double = app
-                                .last_click
-                                .map_or(false, |(t, prev)| prev == item_idx && t.elapsed() < Duration::from_millis(400));
+                            let is_double = app.last_click.map_or(false, |(t, prev)| {
+                                prev == item_idx && t.elapsed() < Duration::from_millis(400)
+                            });
                             app.list_state.select(Some(item_idx));
                             if is_double {
                                 app.enter_dir();
@@ -1495,9 +1507,9 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
                     let clicked_idx = offset + (row - inner.y) as usize;
                     let len = app.get_active_items().len();
                     if clicked_idx < len {
-                        let is_double = app
-                            .last_click
-                            .map_or(false, |(t, prev)| prev == clicked_idx && t.elapsed() < Duration::from_millis(400));
+                        let is_double = app.last_click.map_or(false, |(t, prev)| {
+                            prev == clicked_idx && t.elapsed() < Duration::from_millis(400)
+                        });
                         app.list_state.select(Some(clicked_idx));
                         if is_double {
                             app.enter_dir();
@@ -1522,20 +1534,40 @@ fn render_ui(f: &mut Frame, app: &mut App) {
     let bg_block = Block::default().style(Style::default().bg(app.theme.bg));
     f.render_widget(bg_block, size);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Header: Breadcrumb path + Partition usage gauge + Sort & Progress
-            Constraint::Length(5), // Drives & System Storage Health
-            Constraint::Min(10),   // Content: Explorer / Treemap / TopFiles + Details & Heatmap
-            Constraint::Length(1), // Context-aware 1-line Footer
-        ])
-        .split(size);
+    if app.view_mode == ViewMode::Treemap {
+        // Dedicated fullscreen page: the treemap takes the whole terminal,
+        // leaving only the 1-line footer for key hints.
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(3),    // Treemap page
+                Constraint::Length(1), // Context-aware 1-line Footer
+            ])
+            .split(size);
 
-    render_header(f, app, chunks[0]);
-    render_disks(f, app, chunks[1]);
-    render_body(f, app, chunks[2]);
-    render_footer(f, app, chunks[3]);
+        // The header (and its clickable breadcrumb) is not on screen here.
+        app.breadcrumb_targets.clear();
+        render_treemap_page(f, app, chunks[0]);
+        render_footer(f, app, chunks[1]);
+    } else {
+        // The treemap page is not on screen, so drop its stale hit-boxes.
+        app.treemap_rects.clear();
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Header: Breadcrumb path + Partition usage gauge + Sort & Progress
+                Constraint::Length(5), // Drives & System Storage Health
+                Constraint::Min(10),   // Content: Explorer / TopFiles + Details & Heatmap
+                Constraint::Length(1), // Context-aware 1-line Footer
+            ])
+            .split(size);
+
+        render_header(f, app, chunks[0]);
+        render_disks(f, app, chunks[1]);
+        render_body(f, app, chunks[2]);
+        render_footer(f, app, chunks[3]);
+    }
 
     if let Some(ref modal) = app.modal {
         match modal {
@@ -1579,7 +1611,9 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             app.theme.gauge_ok
         };
         let bar_w = 8usize;
-        let filled = ((pct / 100.0) * bar_w as f64).round().clamp(0.0, bar_w as f64) as usize;
+        let filled = ((pct / 100.0) * bar_w as f64)
+            .round()
+            .clamp(0.0, bar_w as f64) as usize;
         left_spans.push(Span::styled("  [", Style::default().fg(app.theme.text_dim)));
         left_spans.push(Span::styled(
             "━".repeat(filled),
@@ -1591,7 +1625,12 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
         ));
         left_spans.push(Span::styled("] ", Style::default().fg(app.theme.text_dim)));
         left_spans.push(Span::styled(
-            format!("{} / {} · {:.0}%", format_size(used), format_size(total), pct),
+            format!(
+                "{} / {} · {:.0}%",
+                format_size(used),
+                format_size(total),
+                pct
+            ),
             Style::default().fg(gauge_color).bold(),
         ));
     }
@@ -1644,7 +1683,10 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
 
     if app.is_filtering || !app.filter_query.is_empty() {
         let match_count = app.get_active_items().len();
-        mid_spans.push(Span::styled("   / ", Style::default().fg(app.theme.accent).bold()));
+        mid_spans.push(Span::styled(
+            "   / ",
+            Style::default().fg(app.theme.accent).bold(),
+        ));
         mid_spans.push(Span::styled(
             app.filter_query.clone(),
             Style::default().fg(app.theme.text).bold(),
@@ -1661,7 +1703,10 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
         ));
     } else if let Some((ref msg, time)) = app.status_notification {
         if time.elapsed() < Duration::from_secs(4) {
-            mid_spans.push(Span::styled("  │ ", Style::default().fg(app.theme.text_dim)));
+            mid_spans.push(Span::styled(
+                "  │ ",
+                Style::default().fg(app.theme.text_dim),
+            ));
             mid_spans.push(Span::styled(
                 msg.clone(),
                 Style::default().fg(app.theme.gauge_ok).bold(),
@@ -1836,9 +1881,7 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Percentage(56), Constraint::Percentage(44)])
         .split(area);
 
-    let current_node_info = app
-        .current_node()
-        .map(|n| (n.size.max(1), n.access_denied));
+    let current_node_info = app.current_node().map(|n| (n.size.max(1), n.access_denied));
     let (current_total_size, current_access_denied) = current_node_info.unwrap_or((1, false));
 
     let items: Vec<DiskNode> = app.get_active_items().into_iter().cloned().collect();
@@ -1851,22 +1894,15 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
         height: body_chunks[0].height.saturating_sub(2),
     };
 
+    // ViewMode::Treemap has its own fullscreen page (see render_ui) and never
+    // reaches this function; it is matched here only to keep the match exhaustive.
     match app.view_mode {
-        ViewMode::List | ViewMode::TopFiles => {
+        ViewMode::List | ViewMode::TopFiles | ViewMode::Treemap => {
             render_explorer(
                 f,
                 app,
                 current_total_size,
                 current_access_denied,
-                &item_refs,
-                body_chunks[0],
-            );
-        }
-        ViewMode::Treemap => {
-            render_treemap_view(
-                f,
-                app,
-                current_total_size,
                 &item_refs,
                 body_chunks[0],
             );
@@ -1884,7 +1920,12 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
     );
 }
 
-fn render_inline_bar(pct: f64, width: usize, color: Color, empty_color: Color) -> Vec<Span<'static>> {
+fn render_inline_bar(
+    pct: f64,
+    width: usize,
+    color: Color,
+    empty_color: Color,
+) -> Vec<Span<'static>> {
     const BLOCKS: [&str; 8] = ["▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"];
     let clamped = pct.clamp(0.0, 100.0) / 100.0;
     let total_eighths = (clamped * (width * 8) as f64).round() as usize;
@@ -2110,9 +2151,14 @@ fn render_explorer(
     f.render_stateful_widget(list_widget, area, &mut app.list_state);
 }
 
+/// Maximum number of blocks drawn (and navigable) on the treemap page.
+const TREEMAP_MAX_BLOCKS: usize = 48;
+
+/// Slice-and-dice treemap layout. Only needs each item's size, so callers can
+/// pass plain numbers instead of whole `DiskNode` subtrees.
 fn compute_treemap_rects(
     area: Rect,
-    items: &[&DiskNode],
+    sizes: &[u64],
     indices: &[usize],
     horizontal: bool,
     out: &mut Vec<(Rect, usize)>,
@@ -2125,7 +2171,7 @@ fn compute_treemap_rects(
         return;
     }
 
-    let total: u64 = indices.iter().map(|&i| items[i].size.max(1)).sum();
+    let total: u64 = indices.iter().map(|&i| sizes[i].max(1)).sum();
     if total == 0 {
         out.push((area, indices[0]));
         return;
@@ -2134,17 +2180,14 @@ fn compute_treemap_rects(
     let mut half_sum = 0u64;
     let mut split_pos = 1usize;
     for (pos, &idx) in indices.iter().enumerate() {
-        half_sum += items[idx].size.max(1);
+        half_sum += sizes[idx].max(1);
         if half_sum >= total / 2 && pos + 1 < indices.len() {
             split_pos = pos + 1;
             break;
         }
     }
 
-    let first_weight: u64 = indices[..split_pos]
-        .iter()
-        .map(|&i| items[i].size.max(1))
-        .sum();
+    let first_weight: u64 = indices[..split_pos].iter().map(|&i| sizes[i].max(1)).sum();
     let ratio = (first_weight as f64 / total as f64).clamp(0.15, 0.85);
 
     if horizontal {
@@ -2162,8 +2205,8 @@ fn compute_treemap_rects(
             width: area.width - w1,
             height: area.height,
         };
-        compute_treemap_rects(r1, items, &indices[..split_pos], !horizontal, out);
-        compute_treemap_rects(r2, items, &indices[split_pos..], !horizontal, out);
+        compute_treemap_rects(r1, sizes, &indices[..split_pos], !horizontal, out);
+        compute_treemap_rects(r2, sizes, &indices[split_pos..], !horizontal, out);
     } else {
         let h1 = ((area.height as f64) * ratio).round() as u16;
         let h1 = h1.clamp(1, area.height.saturating_sub(1));
@@ -2179,60 +2222,208 @@ fn compute_treemap_rects(
             width: area.width,
             height: area.height - h1,
         };
-        compute_treemap_rects(r1, items, &indices[..split_pos], !horizontal, out);
-        compute_treemap_rects(r2, items, &indices[split_pos..], !horizontal, out);
+        compute_treemap_rects(r1, sizes, &indices[..split_pos], !horizontal, out);
+        compute_treemap_rects(r2, sizes, &indices[split_pos..], !horizontal, out);
     }
 }
 
-fn render_treemap_view(
-    f: &mut Frame,
-    app: &mut App,
-    current_total_size: u64,
-    items: &[&DiskNode],
-    area: Rect,
-) {
+/// Lightweight per-block snapshot so the treemap page can be drawn without
+/// deep-cloning directory subtrees on every frame.
+struct TreemapBlock {
+    name: String,
+    size: u64,
+    is_dir: bool,
+    file_count: usize,
+    dir_count: usize,
+    access_denied: bool,
+    color: Color,
+}
+
+/// Keep the end of a long path (the part that matters), prefixed with an ellipsis.
+fn tail_ellipsis(s: &str, max_chars: usize) -> String {
+    let count = s.chars().count();
+    if count <= max_chars || max_chars < 2 {
+        return s.to_string();
+    }
+    let tail: String = s.chars().skip(count - (max_chars - 1)).collect();
+    format!("…{tail}")
+}
+
+/// Fullscreen treemap page. Replaces the header, drives panel and analytics
+/// side panel, so everything the user still needs (path, size, filter, sort,
+/// scan progress, selected item details, toasts) lives in the block's titles.
+fn render_treemap_page(f: &mut Frame, app: &mut App, area: Rect) {
+    let current_total_size = app.current_node().map(|n| n.size.max(1)).unwrap_or(1);
+
+    let all_items = app.get_active_items();
+    let total_items = all_items.len();
+    let blocks: Vec<TreemapBlock> = all_items
+        .into_iter()
+        .take(TREEMAP_MAX_BLOCKS)
+        .map(|n| TreemapBlock {
+            name: n.name.clone(),
+            size: n.size,
+            is_dir: n.is_dir,
+            file_count: n.file_count,
+            dir_count: n.dir_count,
+            access_denied: n.access_denied,
+            color: n.category().color(&app.theme),
+        })
+        .collect();
+
+    let selected_idx = app.list_state.selected().unwrap_or(0);
+    let dim = Style::default().fg(app.theme.text_dim);
+
+    // Top-left: where we are + total size (+ live filter)
+    let max_path_chars = (area.width as usize).saturating_sub(44).max(12);
+    let path_str = tail_ellipsis(&app.current_path.to_string_lossy(), max_path_chars);
+    let mut title_spans = vec![
+        Span::styled(" Treemap ", Style::default().fg(app.theme.accent).bold()),
+        Span::styled("· ", dim),
+        Span::styled(path_str, Style::default().fg(app.theme.text).bold()),
+        Span::styled(format!(" · {} ", format_size(current_total_size)), dim),
+    ];
+    if app.is_filtering || !app.filter_query.is_empty() {
+        title_spans.push(Span::styled(
+            "/ ",
+            Style::default().fg(app.theme.accent).bold(),
+        ));
+        title_spans.push(Span::styled(
+            app.filter_query.clone(),
+            Style::default().fg(app.theme.text).bold(),
+        ));
+        if app.is_filtering {
+            title_spans.push(Span::styled(
+                "_",
+                Style::default().fg(app.theme.accent).bold(),
+            ));
+        }
+        title_spans.push(Span::styled(
+            format!(" ({total_items} matches) "),
+            Style::default().fg(app.theme.gauge_warn),
+        ));
+    }
+
+    // Top-right: sort order + scan progress (the header is hidden on this page)
+    let sort_badge = app.sort_badge();
+    let mut right_spans = vec![
+        Span::styled(
+            format!(" {sort_badge} "),
+            Style::default().fg(app.theme.accent).bold(),
+        ),
+        Span::styled("│ ", dim),
+    ];
+    if app.scanning {
+        let spinner = match (app.scan_start_time.elapsed().as_millis() / 120) % 6 {
+            0 => "⠋",
+            1 => "⠙",
+            2 => "⠹",
+            3 => "⠸",
+            4 => "⠼",
+            _ => "⠴",
+        };
+        right_spans.push(Span::styled(
+            format!("{spinner} "),
+            Style::default().fg(app.theme.gauge_warn).bold(),
+        ));
+        right_spans.push(Span::styled(
+            format!(
+                "{} · {} ",
+                format_count(app.scanned_files_count),
+                format_size(app.scanned_bytes_count)
+            ),
+            Style::default().fg(app.theme.text),
+        ));
+    } else {
+        right_spans.push(Span::styled(
+            "✓ ",
+            Style::default().fg(app.theme.gauge_ok).bold(),
+        ));
+        right_spans.push(Span::styled(
+            format!("{} ", format_count(app.scanned_files_count)),
+            dim,
+        ));
+    }
+
+    // Bottom-left: details of the selected block (replaces the analytics panel)
+    let mut detail_spans = Vec::new();
+    if let Some(b) = blocks.get(selected_idx) {
+        let pct = (b.size as f64 / current_total_size as f64) * 100.0;
+        detail_spans.push(Span::styled(
+            format!(" {} ", b.name),
+            Style::default().fg(b.color).bold(),
+        ));
+        detail_spans.push(Span::styled(
+            format!("· {} ({:.1}%) ", format_size(b.size), pct),
+            Style::default().fg(app.theme.text),
+        ));
+        if b.is_dir {
+            detail_spans.push(Span::styled(
+                format!("· {} files, {} dirs ", b.file_count, b.dir_count),
+                dim,
+            ));
+        }
+        if b.access_denied {
+            detail_spans.push(Span::styled(
+                "· permission denied ",
+                Style::default().fg(app.theme.gauge_crit),
+            ));
+        }
+    }
+    if total_items > blocks.len() {
+        detail_spans.push(Span::styled(
+            format!("· showing {} of {} ", blocks.len(), total_items),
+            dim,
+        ));
+    }
+
+    // Bottom-right: toast messages (copy/theme/permission notices)
+    let mut toast_spans = Vec::new();
+    if let Some((ref msg, time)) = app.status_notification {
+        if time.elapsed() < Duration::from_secs(4) {
+            toast_spans.push(Span::styled(
+                format!(" {msg} "),
+                Style::default().fg(app.theme.gauge_ok).bold(),
+            ));
+        }
+    }
+
     let outer_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(app.theme.border_focused))
-        .title(Span::styled(
-            format!(
-                " Treemap [{}] — [t] switch to list ",
-                format_size(current_total_size)
-            ),
-            Style::default().fg(app.theme.accent).bold(),
-        ));
+        .title(Line::from(title_spans))
+        .title(Line::from(right_spans).right_aligned())
+        .title_bottom(Line::from(detail_spans))
+        .title_bottom(Line::from(toast_spans).right_aligned());
     let inner = outer_block.inner(area);
     f.render_widget(outer_block, area);
 
+    // Mouse hit-testing (handle_mouse_event) reads these two fields.
+    app.explorer_inner_area = inner;
     app.treemap_rects.clear();
-    if items.is_empty() || inner.width < 4 || inner.height < 3 {
+
+    if blocks.is_empty() || inner.width < 4 || inner.height < 3 {
         let msg = Paragraph::new("  Empty directory or terminal too small for treemap")
             .style(Style::default().fg(app.theme.text_dim));
         f.render_widget(msg, inner);
         return;
     }
 
-    let max_blocks = items.len().min(18);
-    let indices: Vec<usize> = (0..max_blocks).collect();
+    let sizes: Vec<u64> = blocks.iter().map(|b| b.size).collect();
+    let indices: Vec<usize> = (0..blocks.len()).collect();
     let mut rects = Vec::new();
-    compute_treemap_rects(inner, items, &indices, true, &mut rects);
+    compute_treemap_rects(inner, &sizes, &indices, true, &mut rects);
     app.treemap_rects = rects.clone();
-
-    let selected_idx = app.list_state.selected().unwrap_or(0);
 
     for (rect, idx) in rects {
         if rect.width < 2 || rect.height < 1 {
             continue;
         }
-        let node = items[idx];
-        let color = node.category().color(&app.theme);
+        let node = &blocks[idx];
+        let color = node.color;
         let is_selected = idx == selected_idx;
-        let pct = if current_total_size > 0 {
-            (node.size as f64 / current_total_size as f64) * 100.0
-        } else {
-            0.0
-        };
+        let pct = (node.size as f64 / current_total_size as f64) * 100.0;
 
         let border_type = if is_selected {
             BorderType::Double
@@ -2260,6 +2451,14 @@ fn render_treemap_view(
                 let sz_trunc: String = sz.chars().take(max_chars).collect();
                 lines.push(Line::from(Span::styled(
                     sz_trunc,
+                    Style::default().fg(app.theme.text_dim),
+                )));
+            }
+            if rect.height >= 5 && node.is_dir {
+                let cnt = format!("{} files", format_count(node.file_count));
+                let cnt_trunc: String = cnt.chars().take(max_chars).collect();
+                lines.push(Line::from(Span::styled(
+                    cnt_trunc,
                     Style::default().fg(app.theme.text_dim),
                 )));
             }
@@ -2402,8 +2601,8 @@ fn render_analytics(
                 0.0
             };
 
-            let block_cols = ((pct / 100.0) * (area.width.saturating_sub(8) as f64))
-                .clamp(1.0, 44.0) as usize;
+            let block_cols =
+                ((pct / 100.0) * (area.width.saturating_sub(8) as f64)).clamp(1.0, 44.0) as usize;
             let bar_block = "█".repeat(block_cols);
 
             let name_disp = if child.name.chars().count() > 20 {
@@ -2459,7 +2658,10 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let (marked_count, marked_bytes) = app.marked_summary();
     if marked_count > 0 {
         spans.push(Span::styled(
-            format!(" ● {marked_count} selected · {} ", format_size(marked_bytes)),
+            format!(
+                " ● {marked_count} selected · {} ",
+                format_size(marked_bytes)
+            ),
             Style::default()
                 .fg(app.theme.match_fg)
                 .bg(app.theme.gauge_warn)
@@ -2535,9 +2737,10 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 ("j/k", "move"),
                 ("l/Enter", "open"),
                 ("h", "back"),
-                ("t", "list view"),
+                ("s/S", "sort"),
                 ("d", "trash"),
                 ("/", "search"),
+                ("t/Esc", "list view"),
                 ("?", "help"),
             ],
             ViewMode::List => &[
@@ -2557,10 +2760,7 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
 
         for (i, (key, desc)) in hints.iter().enumerate() {
             if i > 0 {
-                spans.push(Span::styled(
-                    " · ",
-                    Style::default().fg(app.theme.text_dim),
-                ));
+                spans.push(Span::styled(" · ", Style::default().fg(app.theme.text_dim)));
             }
             spans.push(Span::styled(
                 *key,
@@ -2616,42 +2816,72 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  s / S                   ", key_style),
-            Span::styled("Cycle sort mode (Size / Name / Count) / Reverse direction", val_style),
+            Span::styled(
+                "Cycle sort mode (Size / Name / Count) / Reverse direction",
+                val_style,
+            ),
         ]),
         Line::from(vec![
             Span::styled("  /                       ", key_style),
-            Span::styled("Filter items with live match count & highlighting", val_style),
+            Span::styled(
+                "Filter items with live match count & highlighting",
+                val_style,
+            ),
         ]),
         Line::from(vec![
             Span::styled("  t                       ", key_style),
-            Span::styled("Toggle 2D proportional block Treemap view", val_style),
+            Span::styled(
+                "Toggle the fullscreen Treemap page (t / Esc returns to list)",
+                val_style,
+            ),
         ]),
         Line::from(vec![
             Span::styled("  f                       ", key_style),
-            Span::styled("Toggle Top-N largest files across the entire scan", val_style),
+            Span::styled(
+                "Toggle Top-N largest files across the entire scan",
+                val_style,
+            ),
         ]),
         Line::from(vec![
             Span::styled("  Space                   ", key_style),
-            Span::styled("Mark / unmark item for multi-select batch actions", val_style),
+            Span::styled(
+                "Mark / unmark item for multi-select batch actions",
+                val_style,
+            ),
         ]),
         Line::from(vec![
             Span::styled("  d                       ", key_style),
-            Span::styled("Move selected/marked item(s) to FreeDesktop Trash", val_style),
+            Span::styled(
+                "Move selected/marked item(s) to FreeDesktop Trash",
+                val_style,
+            ),
         ]),
         Line::from(vec![
-            Span::styled("  D / Delete              ", Style::default().fg(app.theme.gauge_crit).bold()),
+            Span::styled(
+                "  D / Delete              ",
+                Style::default().fg(app.theme.gauge_crit).bold(),
+            ),
             Span::styled("Permanently delete selected/marked item(s)", val_style),
         ]),
         Line::from(vec![
             Span::styled("  y / o                   ", key_style),
-            Span::styled("Copy path to clipboard (y) / Open in $EDITOR or file manager (o)", val_style),
+            Span::styled(
+                "Copy path to clipboard (y) / Open in $EDITOR or file manager (o)",
+                val_style,
+            ),
         ]),
         Line::from(vec![
             Span::styled("  T / r                   ", key_style),
-            Span::styled("Cycle color theme (T) / Refresh partition telemetry (r)", val_style),
+            Span::styled(
+                "Cycle color theme (T) / Refresh partition telemetry (r)",
+                val_style,
+            ),
         ]),
         Line::from(vec![
-            Span::styled("  q / Ctrl+c              ", Style::default().fg(app.theme.gauge_crit).bold()),
+            Span::styled(
+                "  q / Ctrl+c              ",
+                Style::default().fg(app.theme.gauge_crit).bold(),
+            ),
             Span::styled("Quit application safely", val_style),
         ]),
         Line::from(""),
@@ -2677,12 +2907,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(popup, popup_area);
 }
 
-fn render_delete_confirm_modal(
-    f: &mut Frame,
-    app: &App,
-    dialog: &DeleteConfirmDialog,
-    area: Rect,
-) {
+fn render_delete_confirm_modal(f: &mut Frame, app: &App, dialog: &DeleteConfirmDialog, area: Rect) {
     let popup_area = centered_rect(68, 56, area);
     f.render_widget(Clear, popup_area);
 
@@ -2836,7 +3061,9 @@ fn render_delete_confirm_modal(
             Style::default().fg(border_color).bold(),
         ));
 
-    let popup = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    let popup = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     f.render_widget(popup, popup_area);
 }
 
@@ -2915,7 +3142,9 @@ fn render_system_protected_modal(
             Style::default().fg(app.theme.gauge_crit).bold(),
         ));
 
-    let popup = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    let popup = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     f.render_widget(popup, popup_area);
 }
 
@@ -3019,7 +3248,10 @@ mod tests {
         let items = app.get_filtered_sorted_children();
         assert_eq!(items.len(), 2);
 
-        let file_idx = items.iter().position(|i| i.name == "test_file.txt").unwrap();
+        let file_idx = items
+            .iter()
+            .position(|i| i.name == "test_file.txt")
+            .unwrap();
         app.list_state.select(Some(file_idx));
 
         app.request_delete_selected();
@@ -3055,12 +3287,24 @@ mod tests {
     fn test_cursor_memory_on_back_navigation() {
         let root_path = PathBuf::from("/home/user");
         let mut app = test_app(root_path.clone());
-        app.root_node
-            .insert(&PathBuf::from("/home/user/alpha/a.txt"), 1000, false, &root_path);
-        app.root_node
-            .insert(&PathBuf::from("/home/user/beta/b.txt"), 500, false, &root_path);
-        app.root_node
-            .insert(&PathBuf::from("/home/user/gamma/c.txt"), 100, false, &root_path);
+        app.root_node.insert(
+            &PathBuf::from("/home/user/alpha/a.txt"),
+            1000,
+            false,
+            &root_path,
+        );
+        app.root_node.insert(
+            &PathBuf::from("/home/user/beta/b.txt"),
+            500,
+            false,
+            &root_path,
+        );
+        app.root_node.insert(
+            &PathBuf::from("/home/user/gamma/c.txt"),
+            100,
+            false,
+            &root_path,
+        );
 
         // Select second item ("beta")
         app.list_state.select(Some(1));
@@ -3154,5 +3398,109 @@ mod tests {
                 matches!(app.modal, Some(Modal::DeleteConfirm(ref d)) if d.targets[0].name == "fstab" && d.any_system)
             );
         }
+    }
+
+    fn buffer_row(buf: &ratatui::buffer::Buffer, y: u16) -> String {
+        (0..buf.area.width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    fn buffer_text(buf: &ratatui::buffer::Buffer) -> String {
+        (0..buf.area.height)
+            .map(|y| buffer_row(buf, y))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn app_with_files(count: usize) -> App {
+        let root_path = PathBuf::from("/home/user");
+        let mut app = test_app(root_path.clone());
+        for i in 0..count {
+            let p = PathBuf::from(format!("/home/user/item{i:02}/file.bin"));
+            app.root_node
+                .insert(&p, 10_000 - (i as u64) * 100, false, &root_path);
+        }
+        app.scanning = false;
+        app
+    }
+
+    #[test]
+    fn test_treemap_is_fullscreen_page() {
+        let mut app = app_with_files(8);
+        app.view_mode = ViewMode::Treemap;
+
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|f| render_ui(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let text = buffer_text(&buf);
+
+        // The dashboard chrome (header, drives panel, analytics) is gone...
+        assert!(!text.contains("ARCH·DISK"), "header should be hidden");
+        // ...the treemap owns the top row, and only the footer is left below it.
+        assert!(buffer_row(&buf, 0).contains("Treemap"));
+        assert!(buffer_row(&buf, 39).contains("list view"));
+
+        // Border (1 cell) around the page: inner area is the full terminal minus
+        // the border and the 1-line footer.
+        let inner = app.explorer_inner_area;
+        assert_eq!(
+            (inner.x, inner.y, inner.width, inner.height),
+            (1, 1, 118, 37)
+        );
+
+        // The blocks tile the entire inner area, with no gaps or overlaps.
+        assert_eq!(app.treemap_rects.len(), 8);
+        let covered: u32 = app
+            .treemap_rects
+            .iter()
+            .map(|(r, _)| r.width as u32 * r.height as u32)
+            .sum();
+        assert_eq!(covered, 118 * 37);
+        for (r, _) in &app.treemap_rects {
+            assert!(r.x >= inner.x && r.x + r.width <= inner.x + inner.width);
+            assert!(r.y >= inner.y && r.y + r.height <= inner.y + inner.height);
+        }
+    }
+
+    #[test]
+    fn test_treemap_navigation_stays_on_drawn_blocks() {
+        let mut app = app_with_files(60);
+        app.view_mode = ViewMode::Treemap;
+
+        app.jump_bottom();
+        assert_eq!(app.list_state.selected(), Some(TREEMAP_MAX_BLOCKS - 1));
+        app.next_item();
+        assert_eq!(app.list_state.selected(), Some(0));
+        app.previous_item();
+        assert_eq!(app.list_state.selected(), Some(TREEMAP_MAX_BLOCKS - 1));
+
+        // A cursor left deep in the list view is pulled onto a drawn block.
+        app.view_mode = ViewMode::List;
+        app.list_state.select(Some(55));
+        app.view_mode = ViewMode::Treemap;
+        app.clamp_selection();
+        assert_eq!(app.list_state.selected(), Some(TREEMAP_MAX_BLOCKS - 1));
+
+        // The list view still reaches every item.
+        app.view_mode = ViewMode::List;
+        app.jump_bottom();
+        assert_eq!(app.list_state.selected(), Some(59));
+    }
+
+    #[test]
+    fn test_list_view_keeps_dashboard_layout() {
+        let mut app = app_with_files(8);
+        app.view_mode = ViewMode::List;
+
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|f| render_ui(f, &mut app)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+
+        assert!(
+            text.contains("ARCH·DISK"),
+            "header should be visible in list view"
+        );
+        assert!(app.treemap_rects.is_empty());
     }
 }
