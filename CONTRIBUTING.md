@@ -1,39 +1,55 @@
-# Contributing to arch-disk-tui
+# Contributing to SpaceSage
 
-First off, thank you for taking the time to contribute! Contributions, whether it's bug reports, feature requests, documentation improvements, or code contributions, are greatly appreciated.
+Thanks for helping! Bug reports, new cleanup rules, docs fixes and code are all welcome.
 
-To ensure a smooth workflow for everyone, please follow these guidelines when contributing to `arch-disk-tui`.
+## The easiest way to contribute: add a rule
 
----
+SpaceSage explains folders it recognizes (build caches, package caches, logs, and so on).
+Each one is a small TOML file in [`rules/`](rules/), and no Rust is required.
+See [docs/writing-rules.md](docs/writing-rules.md) for the format, then open a pull request.
 
-## Code of Conduct
+Good rules are:
+- **Specific**: they match one tool's folder, not "anything called `cache`".
+- **Honest about safety**: if you're unsure, use `caution`, never `safe`.
+- **Explained**: say what the folder is and what happens if it's deleted.
 
-By participating in this project, you agree to abide by its terms. Please treat all contributors and maintainers with respect.
+## Reporting bugs
 
----
+Search the [issue tracker](https://github.com/emirkefi/spacesage/issues) first, then open a
+bug report. Include your OS, terminal, SpaceSage version (`spacesage --version`), the steps
+to reproduce, and what you expected to happen.
 
-## How Can I Help?
+## Suggesting features
 
-### 1. Reporting Bugs
-If you encounter a bug, crash, or unexpected behavior while using `arch-disk-tui`:
-* **Check existing issues:** Search the [Issue Tracker](https://github.com/emirkefi/arch-disk-tui/issues) to see if the bug has already been reported.
-* **Open a new issue:** If it hasn't, open a new issue and provide as much detail as possible:
-  * Your operating system and environment details.
-  * Steps to reproduce the bug.
-  * Expected behavior vs. actual behavior.
-  * Any relevant logs, panic traces, or screenshots.
+Open a feature request and describe the problem you're trying to solve, not just the
+solution. Screenshots or mockups of TUI ideas help a lot.
 
-### 2. Suggesting Enhancements
-Have an idea to make `arch-disk-tui` better? 
-* Open an issue using the **Feature Request** template (if available) or describe the feature clearly.
-* Explain why this feature would be useful and how you envision it working within the TUI.
+## Pull requests
 
-### 3. Pull Requests (Code Contributions)
-Ready to write some code? Awesome! Please follow these steps:
-
-1. **Fork the repository** and clone your fork locally.
-2. **Create a new branch** for your feature or bugfix:
+1. Fork the repo and create a branch: `git checkout -b feature/short-name` or `fix/short-name`.
+2. Make your change. Keep it focused: one topic per pull request.
+3. Run the checks locally:
    ```bash
-   git checkout -b feature/your-feature-name
-   # or
-   git checkout -b fix/your-bug-name
+   cargo fmt
+   cargo clippy
+   cargo test
+   ```
+4. Add or update tests when you change behavior. UI changes can be tested by rendering to
+   ratatui's `TestBackend`; see the existing tests in `src/main.rs` for examples.
+5. Open the pull request and fill in the template.
+
+## Safety rules for code that deletes things
+
+SpaceSage touches people's files, so changes in this area get extra review:
+- Deleting must go to the Trash by default.
+- Never delete during a scan.
+- Anything under system paths must stay protected (`src/safety.rs`).
+
+## Code of conduct
+
+Everyone taking part must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+By contributing, you agree that your contributions are licensed under the
+[Apache License 2.0](LICENSE).

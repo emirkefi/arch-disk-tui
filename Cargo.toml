@@ -6,7 +6,7 @@ authors = ["Emir <emirlkf@hotmail.com>"]
 repository = "https://github.com/emirkefi/arch-disk-tui"
 description = "A fast, modern terminal disk space analyzer and heatmap for Linux"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 keywords = ["tui", "disk-usage", "ncdu", "ratatui", "archlinux"]
 categories = ["command-line-utilities", "filesystem"]
 
