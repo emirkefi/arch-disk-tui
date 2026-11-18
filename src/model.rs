@@ -53,16 +53,16 @@ impl FileCategory {
         match ext {
             // Media (video, audio, images)
             "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" | "mp3" | "flac"
-            | "wav" | "ogg" | "m4a" | "aac" | "opus" | "png" | "jpg" | "jpeg" | "gif"
-            | "webp" | "svg" | "bmp" | "ico" | "tiff" | "raw" | "heic" | "avif" => Self::Media,
+            | "wav" | "ogg" | "m4a" | "aac" | "opus" | "png" | "jpg" | "jpeg" | "gif" | "webp"
+            | "svg" | "bmp" | "ico" | "tiff" | "raw" | "heic" | "avif" => Self::Media,
             // Archives & Disk Images
             "zip" | "tar" | "gz" | "tgz" | "xz" | "txz" | "zst" | "tzst" | "bz2" | "tbz2"
             | "7z" | "rar" | "iso" | "img" | "dmg" | "qcow2" | "vdi" | "vmdk" | "deb" | "rpm"
             | "pkg" | "appimage" | "flatpak" | "snap" | "apk" | "jar" | "war" => Self::Archive,
             // Code & Config
-            "rs" | "py" | "js" | "ts" | "tsx" | "jsx" | "go" | "c" | "cpp" | "cc" | "h"
-            | "hpp" | "java" | "kt" | "swift" | "rb" | "php" | "cs" | "lua" | "zig" | "nim"
-            | "hs" | "ml" | "sh" | "bash" | "zsh" | "fish" | "toml" | "yaml" | "yml" | "json"
+            "rs" | "py" | "js" | "ts" | "tsx" | "jsx" | "go" | "c" | "cpp" | "cc" | "h" | "hpp"
+            | "java" | "kt" | "swift" | "rb" | "php" | "cs" | "lua" | "zig" | "nim" | "hs"
+            | "ml" | "sh" | "bash" | "zsh" | "fish" | "toml" | "yaml" | "yml" | "json"
             | "jsonc" | "xml" | "html" | "css" | "scss" | "sass" | "sql" | "graphql" | "proto"
             | "vue" | "svelte" | "nix" | "cmake" | "mk" | "ini" | "conf" | "cfg" => Self::Code,
             // Caches, Logs & Temp files
@@ -74,9 +74,9 @@ impl FileCategory {
                 Self::Document
             }
             // Binaries, Libraries & Databases
-            "so" | "a" | "o" | "ko" | "dll" | "exe" | "bin" | "elf" | "wasm" | "db"
-            | "sqlite" | "sqlite3" | "mdb" | "dat" | "idx" | "pak" | "safetensors" | "gguf"
-            | "onnx" | "pt" | "pth" | "ttf" | "otf" | "woff" | "woff2" => Self::Binary,
+            "so" | "a" | "o" | "ko" | "dll" | "exe" | "bin" | "elf" | "wasm" | "db" | "sqlite"
+            | "sqlite3" | "mdb" | "dat" | "idx" | "pak" | "safetensors" | "gguf" | "onnx"
+            | "pt" | "pth" | "ttf" | "otf" | "woff" | "woff2" => Self::Binary,
             _ => Self::Other,
         }
     }
@@ -94,7 +94,13 @@ impl FileCategory {
         }
     }
 
-    pub fn icon(self, icon_mode: IconMode, is_dir: bool, is_symlink: bool, access_denied: bool) -> &'static str {
+    pub fn icon(
+        self,
+        icon_mode: IconMode,
+        is_dir: bool,
+        is_symlink: bool,
+        access_denied: bool,
+    ) -> &'static str {
         if icon_mode == IconMode::None {
             return "";
         }
@@ -107,8 +113,20 @@ impl FileCategory {
         }
         if is_dir {
             return match self {
-                Self::Cache => if nerd { "󰃨 " } else { "d " },
-                _ => if nerd { " " } else { "/ " },
+                Self::Cache => {
+                    if nerd {
+                        "󰃨 "
+                    } else {
+                        "d "
+                    }
+                }
+                _ => {
+                    if nerd {
+                        " "
+                    } else {
+                        "/ "
+                    }
+                }
             };
         }
         if !nerd {
@@ -363,11 +381,7 @@ impl DiskNode {
     fn write_json(&self, out: &mut String, depth: usize, max_depth: usize) {
         let indent = "  ".repeat(depth);
         let _ = writeln!(out, "{{");
-        let _ = writeln!(
-            out,
-            "{indent}  \"name\": \"{}\",",
-            escape_json(&self.name)
-        );
+        let _ = writeln!(out, "{indent}  \"name\": \"{}\",", escape_json(&self.name));
         let _ = writeln!(
             out,
             "{indent}  \"path\": \"{}\",",
@@ -382,11 +396,7 @@ impl DiskNode {
         let _ = writeln!(out, "{indent}  \"is_dir\": {},", self.is_dir);
         let _ = writeln!(out, "{indent}  \"file_count\": {},", self.file_count);
         let _ = writeln!(out, "{indent}  \"dir_count\": {},", self.dir_count);
-        let _ = writeln!(
-            out,
-            "{indent}  \"access_denied\": {},",
-            self.access_denied
-        );
+        let _ = writeln!(out, "{indent}  \"access_denied\": {},", self.access_denied);
 
         if self.is_dir && depth < max_depth && !self.children.is_empty() {
             let _ = writeln!(out, "{indent}  \"children\": [");
@@ -410,7 +420,9 @@ impl DiskNode {
 
     /// Export tree entries to CSV string
     pub fn to_csv(&self, max_depth: usize) -> String {
-        let mut out = String::from("path,name,type,category,size_bytes,size_human,files,subdirs,access_denied\n");
+        let mut out = String::from(
+            "path,name,type,category,size_bytes,size_human,files,subdirs,access_denied\n",
+        );
         self.write_csv(&mut out, 0, max_depth);
         out
     }
@@ -551,9 +563,24 @@ mod tests {
         let root_path = PathBuf::from("/home/user");
         let mut root = DiskNode::new("user".into(), root_path.clone(), true);
 
-        root.insert(&PathBuf::from("/home/user/small.txt"), 100, false, &root_path);
-        root.insert(&PathBuf::from("/home/user/movies/huge.mkv"), 9000, false, &root_path);
-        root.insert(&PathBuf::from("/home/user/code/main.rs"), 500, false, &root_path);
+        root.insert(
+            &PathBuf::from("/home/user/small.txt"),
+            100,
+            false,
+            &root_path,
+        );
+        root.insert(
+            &PathBuf::from("/home/user/movies/huge.mkv"),
+            9000,
+            false,
+            &root_path,
+        );
+        root.insert(
+            &PathBuf::from("/home/user/code/main.rs"),
+            500,
+            false,
+            &root_path,
+        );
 
         let top = root.collect_largest_files(2);
         assert_eq!(top.len(), 2);
@@ -573,13 +600,22 @@ mod tests {
 
         let start = std::time::Instant::now();
         for i in 0..50_000 {
-            let path = root_path.join(format!("dir_{}/sub_{}/file_{}.bin", i % 50, (i / 50) % 20, i));
+            let path = root_path.join(format!(
+                "dir_{}/sub_{}/file_{}.bin",
+                i % 50,
+                (i / 50) % 20,
+                i
+            ));
             root.insert(&path, 1024, false, &root_path);
         }
         let elapsed = start.elapsed();
 
         assert_eq!(root.file_count, 50_000);
         assert_eq!(root.size, 50_000 * 1024);
-        assert!(elapsed.as_millis() < 250, "Insertion of 50k items took too long: {:?}", elapsed);
+        assert!(
+            elapsed.as_millis() < 250,
+            "Insertion of 50k items took too long: {:?}",
+            elapsed
+        );
     }
 }
